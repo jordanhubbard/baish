@@ -195,6 +195,7 @@ static void set_machine_vars (void);
 static void set_home_var (void);
 static void set_shell_var (void);
 static char *get_bash_name (void);
+static char *get_baish_name (void);
 static void initialize_shell_level (void);
 static void uidset (void);
 #if defined (ARRAY_VARS)
@@ -623,11 +624,19 @@ initialize_shell_variables (char **env, int privmode)
   temp_var = bind_variable ("BASH", name, 0);
   free (name);
 
-  /* Make the exported environment variable SHELL be the user's login
-     shell.  Note that the `tset' command looks at this variable
-     to determine what style of commands to output; if it ends in "csh",
-     then C-shell commands are output, else Bourne shell commands. */
+  name = get_baish_name ();
+  temp_var = bind_variable ("BAISH", name, 0);
+  free (name);
+
+  /* Make the exported environment variable SHELL be this shell's pathname.
+     Note that the `tset' command looks at this variable to determine what
+     style of commands to output; if it ends in "csh", then C-shell commands
+     are output, else Bourne shell commands are output. */
   set_shell_var ();
+
+  set_if_not ("BAISH_OPENAI_BASE_URL", "http://puck.local/v1");
+  set_if_not ("BAISH_MODEL", "gpt-4o-mini");
+  set_if_not ("BAISH_AUTOEXEC", "0");
 
   /* Make a variable called BASH_VERSION which contains the version info. */
   bind_variable ("BASH_VERSION", shell_version_string (), 0);
@@ -753,20 +762,16 @@ set_home_var (void)
 #endif
 }
 
-/* Set $SHELL to the user's login shell if it is not already set.  Call
-   get_current_user_info if we haven't already fetched the shell. */
+/* Set $SHELL to the full pathname of this shell. */
 static void
 set_shell_var (void)
 {
   SHELL_VAR *temp_var;
+  char *name;
 
-  temp_var = find_variable ("SHELL");
-  if (temp_var == 0)
-    {
-      if (current_user.shell == 0)
-	get_current_user_info ();
-      temp_var = bind_variable ("SHELL", current_user.shell, 0);
-    }
+  name = get_baish_name ();
+  temp_var = bind_variable ("SHELL", name, 0);
+  free (name);
 #if 0
   VSETATTR (temp_var, att_exported);
 #endif
@@ -834,6 +839,56 @@ get_bash_name (void)
 		get_current_user_info ();
 	      name = savestring (current_user.shell);
 	    }
+	}
+      else
+	{
+	  name = full_pathname (tname);
+	  free (tname);
+	}
+    }
+
+  return (name);
+}
+
+static char *
+get_baish_name (void)
+{
+  char *name;
+
+  if (ABSPATH(shell_name))
+    name = savestring (shell_name);
+  else if (shell_name[0] == '.' && shell_name[1] == '/')
+    {
+      /* Fast path for common case. */
+      char *cdir;
+      size_t len;
+
+      cdir = get_string_value ("PWD");
+      if (cdir)
+	{
+	  len = strlen (cdir);
+	  name = (char *)xmalloc (len + strlen (shell_name) + 1);
+	  strcpy (name, cdir);
+	  strcpy (name + len, shell_name + 1);
+	}
+      else
+	name = savestring (shell_name);
+    }
+  else
+    {
+      char *tname;
+      int s;
+
+      tname = find_user_command (shell_name);
+
+      if (tname == 0)
+	{
+	  /* Try the current directory. */
+	  s = file_status (shell_name);
+	  if (s & FS_EXECABLE)
+	    name = make_absolute (shell_name, get_string_value ("PWD"));
+	  else
+	    name = savestring (shell_name);
 	}
       else
 	{

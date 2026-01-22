@@ -87,7 +87,7 @@ shell_version_string (void)
 void
 show_shell_version (int extended)
 {
-  printf (_("GNU bash, version %s (%s)\n"), shell_version_string (), MACHTYPE);
+  printf (_("GNU baish, version %s (%s)\n"), shell_version_string (), MACHTYPE);
   if (extended)
     {
       printf ("%s\n", _(bash_copyright));

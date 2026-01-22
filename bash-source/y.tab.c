@@ -7700,6 +7700,62 @@ read_token_word (int character)
   all_digit_token = DIGIT (character);
   dollar_present = quoted = pass_next_character = compound_assignment = 0;
 
+  /* baish syntax extension: ?{ ... } expands to: ask "..." */
+  if (character == '?')
+    {
+      peek_char = shell_getc (0);
+      if (peek_char == '{')
+        {
+          size_t qcap, qlen;
+          char *qbuf;
+          int c;
+
+          qcap = 256;
+          qlen = 0;
+          qbuf = (char *)xmalloc (qcap);
+
+          while ((c = shell_getc (0)) != EOF)
+            {
+              if (c == '}')
+                break;
+              if (qlen + 2 >= qcap)
+                {
+                  qcap *= 2;
+                  qbuf = (char *)xrealloc (qbuf, qcap);
+                }
+              qbuf[qlen++] = (char)c;
+            }
+          qbuf[qlen] = '\0';
+
+          /* trim leading/trailing whitespace */
+          {
+            size_t start = 0;
+            size_t end = qlen;
+            while (start < end && (qbuf[start] == ' ' || qbuf[start] == '\t' || qbuf[start] == '\r' || qbuf[start] == '\n'))
+              start++;
+            while (end > start && (qbuf[end-1] == ' ' || qbuf[end-1] == '\t' || qbuf[end-1] == '\r' || qbuf[end-1] == '\n'))
+              end--;
+            if (start != 0 || end != qlen)
+              {
+                memmove (qbuf, qbuf + start, end - start);
+                qlen = end - start;
+                qbuf[qlen] = '\0';
+              }
+          }
+
+          /* Queue up the question as the next WORD token. */
+          word_desc_to_read = make_word (qbuf);
+          word_desc_to_read->flags |= W_QUOTED|W_NOSPLIT|W_NOGLOB|W_NOTILDE|W_NOPROCSUB;
+          token_to_read = WORD;
+
+          free (qbuf);
+
+          yylval.word = make_word ("ask");
+          return WORD;
+        }
+      shell_ungetc (peek_char);
+    }
+
   for (;;)
     {
       if (character == EOF)
