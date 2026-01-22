@@ -16,8 +16,8 @@ Due to network restrictions in the current environment, manual extraction is req
 # Download the archive (run outside this environment if needed)
 wget https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz
 
-# Extract to this directory
-tar -xzf bash-5.3.tar.gz -C bash-source/
+# Extract to this directory (--strip-components=1 removes the bash-5.3/ wrapper)
+tar -xzf bash-5.3.tar.gz --strip-components=1 -C bash-source/
 ```
 
 ## Expected Contents
