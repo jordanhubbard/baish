@@ -634,7 +634,7 @@ initialize_shell_variables (char **env, int privmode)
      are output, else Bourne shell commands are output. */
   set_shell_var ();
 
-  set_if_not ("BAISH_OPENAI_BASE_URL", "http://puck.local/v1");
+  set_if_not ("BAISH_OPENAI_BASE_URL", "puck.local");
   set_if_not ("BAISH_MODEL", "gpt-4o-mini");
   set_if_not ("BAISH_AUTOEXEC", "0");
 

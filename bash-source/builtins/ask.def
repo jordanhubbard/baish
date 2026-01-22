@@ -36,7 +36,8 @@ $SHORT_DOC ask [question...]
 Ask the configured model a question; optionally execute returned shell commands.
 
 Configuration variables:
-  BAISH_OPENAI_BASE_URL  Base URL like http://host:port/v1
+  BAISH_OPENAI_BASE_URL  Host or base URL (e.g. puck.local, puck.local:8000, http://puck.local/v1)
+  BAISH_OPENAI_PORT      Optional port override (ignored if BAISH_OPENAI_BASE_URL includes an explicit port)
   BAISH_MODEL            Model name
   BAISH_AUTOEXEC         If set (non-zero), execute returned commands without prompting
   OPENAI_API_KEY         Optional bearer token
@@ -242,19 +243,23 @@ baish_json_parse_string (const char **pp)
 }
 
 static int
-baish_parse_http_base_url (const char *base, char **hostp, char **portp, char **pathp)
+baish_parse_http_base_url (const char *base, char **hostp, char **portp, char **pathp, int *explicit_portp)
 {
   const char *p, *host_start;
   const char *host_end, *port_start, *path_start;
   char *host, *port, *path;
+  int explicit_port;
 
   if (base == 0)
     return 0;
 
   p = base;
-  if (STREQN (p, "http://", 7) == 0)
-    return 0;
-  p += 7;
+  if (STREQN (p, "http://", 7))
+    p += 7;
+  else if (STREQN (p, "https://", 8))
+    return 0; /* no TLS support */
+
+  explicit_port = 0;
 
   host_start = p;
   while (*p && *p != ':' && *p != '/')
@@ -270,6 +275,9 @@ baish_parse_http_base_url (const char *base, char **hostp, char **portp, char **
       port_start = p;
       while (*p && *p != '/')
         p++;
+      if (p == port_start)
+        return 0;
+      explicit_port = 1;
     }
 
   path_start = (*p == '/') ? p : 0;
@@ -286,7 +294,7 @@ baish_parse_http_base_url (const char *base, char **hostp, char **portp, char **
       port[port_end - port_start] = '\0';
     }
   else
-    port = savestring ("80");
+    port = 0;
 
   if (path_start)
     path = savestring (path_start);
@@ -296,7 +304,32 @@ baish_parse_http_base_url (const char *base, char **hostp, char **portp, char **
   *hostp = host;
   *portp = port;
   *pathp = path;
+  if (explicit_portp)
+    *explicit_portp = explicit_port;
   return 1;
+}
+
+static char *
+baish_http_post (const char *host, const char *port, const char *path, const char *auth_bearer, const char *body);
+
+static char *
+baish_http_post_try_ports (const char *host, const char *port, const char *path, const char *auth_bearer, const char *body)
+{
+  static const char *fallback_ports[] = { "80", "8000", 0 };
+  char *resp;
+  int i;
+
+  if (port && *port)
+    return baish_http_post (host, port, path, auth_bearer, body);
+
+  for (i = 0; fallback_ports[i]; i++)
+    {
+      resp = baish_http_post (host, fallback_ports[i], path, auth_bearer, body);
+      if (resp)
+        return resp;
+    }
+
+  return 0;
 }
 
 static char *
@@ -699,14 +732,16 @@ ask_builtin (WORD_LIST *list)
   int status;
 
   const char *base_url = get_string_value ("BAISH_OPENAI_BASE_URL");
+  const char *port_override = get_string_value ("BAISH_OPENAI_PORT");
   const char *model = get_string_value ("BAISH_MODEL");
   const char *autoexec = get_string_value ("BAISH_AUTOEXEC");
   const char *api_key = get_string_value ("OPENAI_API_KEY");
+  int explicit_port;
 
   if (base_url == 0)
     base_url = get_string_value ("OPENAI_BASE_URL");
   if (base_url == 0)
-    base_url = "http://puck.local/v1";
+    base_url = "puck.local";
 
   if (model == 0)
     model = get_string_value ("OPENAI_MODEL");
@@ -747,11 +782,19 @@ ask_builtin (WORD_LIST *list)
     }
 
   host = port = base_path = 0;
-  if (baish_parse_http_base_url (base_url, &host, &port, &base_path) == 0)
+  explicit_port = 0;
+  if (baish_parse_http_base_url (base_url, &host, &port, &base_path, &explicit_port) == 0)
     {
-	  builtin_error (_("BAISH_OPENAI_BASE_URL must be http://host:port/v1"));
+	  builtin_error (_("BAISH_OPENAI_BASE_URL must be host[:port][/v1] or http://host[:port][/v1]"));
       free (question);
       return (EXECUTION_FAILURE);
+    }
+
+  if (explicit_port == 0 && port_override && *port_override)
+    {
+      if (port)
+        free (port);
+      port = savestring (port_override);
     }
 
   {
@@ -779,12 +822,13 @@ ask_builtin (WORD_LIST *list)
            "}",
            model, escaped);
 
-  resp = baish_http_post (host, port, path, api_key, body);
+  resp = baish_http_post_try_ports (host, port, path, api_key, body);
   free (question);
   free (escaped);
   free (body);
   free (host);
-  free (port);
+  if (port)
+    free (port);
   free (base_path);
   free (path);
 

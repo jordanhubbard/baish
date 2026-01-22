@@ -1,43 +1,83 @@
 # baish
-A version of bash that also knows what you were probably _trying_ to do.
 
-## Repository Structure
+`baish` is a fork of GNU Bash (based on bash 5.3 sources) with an integrated OpenAI-compatible chatbot builtin.
 
-```
-├── bash-handbook-review/
-│   └── REVIEW.md          # Comprehensive review of the bash-handbook
-├── bash-source/
-│   └── README.md          # Instructions for bash 5.3 source extraction
-├── LICENSE
-└── README.md             # This file
+## Build
+
+```bash
+cd bash-source
+./configure
+make -j4
 ```
 
-## Development Resources
+The resulting shell binary is `bash-source/baish`.
 
-### 1. Bash Handbook Review
-Located in `bash-handbook-review/REVIEW.md`, this document provides:
-- Overview of bash fundamentals from https://github.com/denysdovhan/bash-handbook
-- Key concepts and features
-- Common user mistakes to address
-- Insights for implementing intelligent error correction
-- Relevance to the baish project goals
+## AI configuration (environment variables)
 
-### 2. Bash Source Code Reference
-The `bash-source/` directory is prepared for the bash 5.3 source code. Having access to the actual bash implementation helps with:
-- Understanding bash's internal behavior
-- Ensuring compatibility
-- Learning from established patterns
-- Implementing similar features with enhancements
+Required:
 
-See `bash-source/README.md` for extraction instructions.
+- `BAISH_OPENAI_BASE_URL` – least-info-first host/base URL. Any of these work:
+  - `puck.local`
+  - `puck.local:8000`
+  - `http://puck.local/v1`
+  - `http://puck.local:8000/v1`
+- `BAISH_MODEL` – model name (example: `gpt-4o-mini`)
 
-## Key Features to Implement
+Optional:
 
-Based on the bash handbook review, baish could help with:
-- Variable quoting mistakes
-- Typos in command names
-- Incorrect conditional syntax
-- Misused exit codes
-- Array handling errors
-- Redirection mistakes
-- Common scripting anti-patterns
+- `BAISH_OPENAI_PORT` – port override **only** when `BAISH_OPENAI_BASE_URL` does **not** include an explicit `:port`
+- `OPENAI_API_KEY` – bearer token if your server requires auth
+- `BAISH_AUTOEXEC` – if non-zero, execute returned commands without prompting (default: `0`)
+
+If no port is provided, `baish` will try common HTTP ports (currently `80`, then `8000`).
+
+## Usage
+
+### `ask` builtin
+
+```bash
+ask "how do I list files by size?"
+```
+
+The model is instructed to return JSON of the form:
+
+```json
+{"answer":"...","commands":["..."]}
+```
+
+If `commands` are returned:
+- interactive shell: `baish` will prompt before executing unless `BAISH_AUTOEXEC` is set
+- non-interactive (`-c`): commands are never auto-executed
+
+Useful result variables:
+
+- `BAISH_LAST_ANSWER`
+- `BAISH_LAST_COMMANDS` (newline-separated)
+
+### `?{ ... }` syntax sugar
+
+`?{question}` is equivalent to `ask "question"`.
+
+```bash
+?{what is the command to find large files in this directory?}
+```
+
+## Working examples (puck.local)
+
+```bash
+export BAISH_OPENAI_BASE_URL=puck.local
+export BAISH_MODEL=gpt-4o-mini
+
+./bash-source/baish -c '?{what is 2+2?}'
+./bash-source/baish -c 'ask "give me a one-liner to show disk usage by directory"'
+```
+
+If your server is running on a non-default port:
+
+```bash
+export BAISH_OPENAI_BASE_URL=puck.local
+export BAISH_OPENAI_PORT=8000
+export BAISH_MODEL=gpt-4o-mini
+
+./bash-source/baish -c '?{write a safe rm command to delete ./tmp only}'
+```
