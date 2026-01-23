@@ -964,6 +964,62 @@ baish_extract_model_ids (const char *json, char ***idsp, int *nids)
   return 1;
 }
 
+static int
+baish_model_in_list (const char *model, char **models, int nmodels)
+{
+  int i;
+
+  if (model == 0 || *model == 0 || models == 0 || nmodels <= 0)
+    return 0;
+
+  for (i = 0; i < nmodels; i++)
+    if (models[i] && STREQ (models[i], model))
+      return 1;
+
+  return 0;
+}
+
+static int
+baish_fetch_models (const char *host, const char *port, const char *path, const char *auth_bearer,
+                    char ***modelsp, int *nmodelsp, int *statusp, char **errp)
+{
+  char *resp;
+  char *body;
+  int status;
+  int have;
+
+  if (statusp)
+    *statusp = 0;
+  if (errp)
+    *errp = 0;
+
+  resp = baish_http_get_try_ports (host, port, path, auth_bearer);
+  if (resp == 0)
+    return -1;
+
+  status = baish_http_status_code (resp);
+  body = baish_http_body (resp);
+  free (resp);
+
+  if (statusp)
+    *statusp = status;
+
+  have = 0;
+  if (body && status == 200)
+    {
+      if (baish_extract_model_ids (body, modelsp, nmodelsp))
+        have = 1;
+    }
+
+  if (errp)
+    *errp = baish_extract_error_message (body);
+
+  if (body)
+    free (body);
+
+  return have ? 1 : 0;
+}
+
 static void
 baish_free_string_list (char **s, int n)
 {
@@ -1216,6 +1272,13 @@ ask_builtin (WORD_LIST *list)
   char **models;
   int nmodels;
   int have_models;
+  int model_missing;
+  int interactive_notice;
+  int fail_fast_enabled;
+  int preflight_status;
+  char *preflight_error;
+  int preflight_result;
+  int preflight_done;
 
   const char *base_url = get_string_value ("BAISH_OPENAI_BASE_URL");
   const char *base_url_var = "BAISH_OPENAI_BASE_URL";
@@ -1231,6 +1294,13 @@ ask_builtin (WORD_LIST *list)
   models = 0;
   nmodels = 0;
   have_models = 0;
+  model_missing = 0;
+  interactive_notice = 0;
+  fail_fast_enabled = 0;
+  preflight_status = 0;
+  preflight_error = 0;
+  preflight_result = 0;
+  preflight_done = 0;
 
   if (base_url == 0)
     {
@@ -1306,31 +1376,76 @@ ask_builtin (WORD_LIST *list)
   path = baish_join_api_path (base_path, "/chat/completions");
   models_path = baish_join_api_path (base_path, "/models");
 
-  if (model == 0 || *model == 0)
+  interactive_notice = baish_notice_enabled ();
+  fail_fast_enabled = baish_truthy (fail_fast);
+  model_missing = (model == 0 || *model == 0);
+
+  if (fail_fast_enabled || interactive_notice || model_missing)
     {
-      char *mresp;
-      char *mbody;
-      int mstatus;
+      preflight_done = 1;
+      preflight_result = baish_fetch_models (host, port, models_path, api_key,
+                                             &models, &nmodels, &preflight_status, &preflight_error);
+      if (preflight_result == 1)
+        have_models = 1;
+    }
+
+  if (model_missing)
+    {
+      const char *label;
+
+      label = fail_fast_enabled ? "fail-fast preflight failed" : "preflight failed";
+
+      if (preflight_done)
+        {
+          if (preflight_result == -1)
+            {
+              bind_variable ("BAISH_LAST_ANSWER", "", 0);
+              bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+              if (baish_transport_error[0])
+                builtin_error (_("%s: %s"), label, baish_transport_error);
+              else if (host && port)
+                builtin_error (_("%s (cannot reach %s:%s)"), label, host, port);
+              else if (host)
+                builtin_error (_("%s (cannot reach %s)"), label, host);
+              else
+                builtin_error (_("%s (cannot reach LLM)"), label);
+              baish_print_llm_env_help ();
+              if (preflight_error)
+                free (preflight_error);
+              free (question);
+              free (host);
+              if (port) free (port);
+              free (base_path);
+              free (path);
+              if (models_path) free (models_path);
+              baish_free_string_list (models, nmodels);
+              return (EXECUTION_FAILURE);
+            }
+          if (preflight_status != 200)
+            {
+              bind_variable ("BAISH_LAST_ANSWER", "", 0);
+              bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+              if (preflight_error)
+                builtin_error (_("%s (HTTP %d): %s"), label, preflight_status, preflight_error);
+              else
+                builtin_error (_("%s (HTTP %d)"), label, preflight_status);
+              baish_print_llm_env_help ();
+              if (preflight_error)
+                free (preflight_error);
+              free (question);
+              free (host);
+              if (port) free (port);
+              free (base_path);
+              free (path);
+              if (models_path) free (models_path);
+              baish_free_string_list (models, nmodels);
+              return (EXECUTION_FAILURE);
+            }
+        }
 
       bind_variable ("BAISH_LAST_ANSWER", "", 0);
       bind_variable ("BAISH_LAST_COMMANDS", "", 0);
-      builtin_error (_("LLM model not configured (missing BAISH_MODEL / OPENAI_MODEL)"));
-      baish_print_config_summary (base_url_var, base_url, model_var, model);
-
-      mresp = baish_http_get_try_ports (host, port, models_path, api_key);
-      if (mresp)
-        {
-          mstatus = baish_http_status_code (mresp);
-          mbody = baish_http_body (mresp);
-          free (mresp);
-          if (mbody && mstatus == 200)
-            {
-              if (baish_extract_model_ids (mbody, &models, &nmodels))
-                have_models = 1;
-            }
-          if (mbody)
-            free (mbody);
-        }
+      builtin_error (_("BAISH_MODEL is not set"));
 
       if (have_models)
         {
@@ -1343,10 +1458,12 @@ ask_builtin (WORD_LIST *list)
           if (nmodels > limit)
             fprintf (stderr, "  ... (%d more)\n", nmodels - limit);
         }
-      else if (baish_transport_error[0])
-        fprintf (stderr, "baish: could not list models (%s)\n", baish_transport_error);
+      else
+        fprintf (stderr, "baish: could not list models from %s\n", base_url);
 
       baish_print_llm_env_help ();
+      if (preflight_error)
+        free (preflight_error);
       free (question);
       free (host);
       if (port) free (port);
@@ -1357,77 +1474,118 @@ ask_builtin (WORD_LIST *list)
       return (EXECUTION_FAILURE);
     }
 
-  if (baish_notice_enabled ())
+  if (preflight_done)
+    {
+      const char *label;
+
+      label = fail_fast_enabled ? "fail-fast preflight failed" : "preflight failed";
+
+      if (preflight_result == -1)
+        {
+          bind_variable ("BAISH_LAST_ANSWER", "", 0);
+          bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+          if (baish_transport_error[0])
+            builtin_error (_("%s: %s"), label, baish_transport_error);
+          else if (host && port)
+            builtin_error (_("%s (cannot reach %s:%s)"), label, host, port);
+          else if (host)
+            builtin_error (_("%s (cannot reach %s)"), label, host);
+          else
+            builtin_error (_("%s (cannot reach LLM)"), label);
+          baish_print_llm_env_help ();
+          if (preflight_error)
+            free (preflight_error);
+          free (question);
+          free (host);
+          if (port) free (port);
+          free (base_path);
+          free (path);
+          if (models_path) free (models_path);
+          baish_free_string_list (models, nmodels);
+          return (EXECUTION_FAILURE);
+        }
+      if (preflight_status != 200)
+        {
+          bind_variable ("BAISH_LAST_ANSWER", "", 0);
+          bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+          if (preflight_error)
+            builtin_error (_("%s (HTTP %d): %s"), label, preflight_status, preflight_error);
+          else
+            builtin_error (_("%s (HTTP %d)"), label, preflight_status);
+          baish_print_llm_env_help ();
+          if (preflight_error)
+            free (preflight_error);
+          free (question);
+          free (host);
+          if (port) free (port);
+          free (base_path);
+          free (path);
+          if (models_path) free (models_path);
+          baish_free_string_list (models, nmodels);
+          return (EXECUTION_FAILURE);
+        }
+
+      if (preflight_result == 0)
+        {
+          bind_variable ("BAISH_LAST_ANSWER", "", 0);
+          bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+          builtin_error (_("%s (could not parse models)"), label);
+          baish_print_llm_env_help ();
+          if (preflight_error)
+            free (preflight_error);
+          free (question);
+          free (host);
+          if (port) free (port);
+          free (base_path);
+          free (path);
+          if (models_path) free (models_path);
+          baish_free_string_list (models, nmodels);
+          return (EXECUTION_FAILURE);
+        }
+
+      if (have_models && baish_model_in_list (model, models, nmodels) == 0)
+        {
+          bind_variable ("BAISH_LAST_ANSWER", "", 0);
+          bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+          builtin_error (_("model '%s' is not available"), model);
+          {
+            int j;
+            int limit;
+            fprintf (stderr, "baish: ask: supported models reported by the API (%d):\n", nmodels);
+            limit = (nmodels > 50) ? 50 : nmodels;
+            for (j = 0; j < limit; j++)
+              fprintf (stderr, "  %s\n", models[j]);
+            if (nmodels > limit)
+              fprintf (stderr, "  ... (%d more)\n", nmodels - limit);
+            fprintf (stderr, "baish: ask: set BAISH_MODEL (or OPENAI_MODEL) to one of the above\n");
+          }
+          baish_print_llm_env_help ();
+          if (preflight_error)
+            free (preflight_error);
+          free (question);
+          free (host);
+          if (port) free (port);
+          free (base_path);
+          free (path);
+          if (models_path) free (models_path);
+          baish_free_string_list (models, nmodels);
+          return (EXECUTION_FAILURE);
+        }
+    }
+
+  if (preflight_error)
+    {
+      free (preflight_error);
+      preflight_error = 0;
+    }
+
+  if (interactive_notice)
     {
       char *preview;
       preview = baish_sanitize_preview (question, (int)strlen (question));
       fprintf (stderr, "Asking %s:%s %s\n", host ? host : "?", model ? model : "?", preview);
       free (preview);
       fflush (stderr);
-    }
-
-  if (baish_truthy (fail_fast))
-    {
-      char *pre;
-      char *pbody;
-      int pstatus;
-
-      pre = baish_http_get_try_ports (host, port, models_path, api_key);
-      if (pre == 0)
-        {
-          bind_variable ("BAISH_LAST_ANSWER", "", 0);
-          bind_variable ("BAISH_LAST_COMMANDS", "", 0);
-          if (baish_transport_error[0])
-            builtin_error (_("fail-fast preflight failed: %s"), baish_transport_error);
-          else if (host && port)
-            builtin_error (_("fail-fast preflight failed (cannot reach %s:%s)"), host, port);
-          else if (host)
-            builtin_error (_("fail-fast preflight failed (cannot reach %s)"), host);
-          else
-            builtin_error (_("fail-fast preflight failed (cannot reach LLM)"));
-          baish_print_llm_env_help ();
-          free (question);
-          free (host);
-          if (port) free (port);
-          free (base_path);
-          free (path);
-          free (models_path);
-          baish_free_string_list (models, nmodels);
-          return (EXECUTION_FAILURE);
-        }
-
-      pstatus = baish_http_status_code (pre);
-      pbody = baish_http_body (pre);
-      free (pre);
-      if (pbody == 0 || pstatus != 200)
-        {
-          char *em;
-          bind_variable ("BAISH_LAST_ANSWER", "", 0);
-          bind_variable ("BAISH_LAST_COMMANDS", "", 0);
-          em = baish_extract_error_message (pbody);
-          if (em)
-            {
-              builtin_error (_("fail-fast preflight failed (HTTP %d): %s"), pstatus, em);
-              free (em);
-            }
-          else
-            builtin_error (_("fail-fast preflight failed (HTTP %d)"), pstatus);
-          if (pbody)
-            free (pbody);
-          baish_print_llm_env_help ();
-          free (question);
-          free (host);
-          if (port) free (port);
-          free (base_path);
-          free (path);
-          free (models_path);
-          baish_free_string_list (models, nmodels);
-          return (EXECUTION_FAILURE);
-        }
-
-      if (baish_extract_model_ids (pbody, &models, &nmodels))
-        have_models = 1;
-      free (pbody);
     }
 
   escaped = baish_json_escape (question);
