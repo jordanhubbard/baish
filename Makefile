@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-BAISH_SRC_DIR ?= bash-source
+BAISH_SRC_DIR ?= src
 BAISH_BIN := $(BAISH_SRC_DIR)/baish
 
 JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
