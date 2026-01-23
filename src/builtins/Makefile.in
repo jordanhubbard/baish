@@ -163,6 +163,7 @@ OFILES = builtins.o \
 	common.o declare.o echo.o enable.o eval.o evalfile.o \
 	evalstring.o exec.o exit.o fc.o fg_bg.o hash.o help.o history.o \
 	jobs.o kill.o let.o mapfile.o ask.o \
+	openai_core.o openai_chat.o cjson/cJSON.o \
 	pushd.o read.o return.o set.o setattr.o shift.o source.o \
 	suspend.o test.o times.o trap.o type.o ulimit.o umask.o \
 	wait.o getopts.o shopt.o printf.o getopt.o bashgetopt.o complete.o
