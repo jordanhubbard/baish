@@ -1080,7 +1080,7 @@ baish_extract_message_content (const char *json)
 }
 
 static int
-baish_parse_answer_commands (const char *s, char **answerp, char ***cmdsp, int *ncmdsp)
+baish_try_parse_answer_commands (const char *s, char **answerp, char ***cmdsp, int *ncmdsp)
 {
   const char *p;
   char *answer;
@@ -1092,13 +1092,10 @@ baish_parse_answer_commands (const char *s, char **answerp, char ***cmdsp, int *
   cmds = 0;
   ncmds = 0;
 
-  if (s == 0)
+  if (s == 0 || *s != '{')
     return 0;
 
-  p = strchr (s, '{');
-  if (p == 0)
-    return 0;
-  p++;
+  p = s + 1;
 
   while (*p)
     {
@@ -1211,6 +1208,25 @@ fail:
           free (cmds[i]);
       free (cmds);
     }
+  return 0;
+}
+
+static int
+baish_parse_answer_commands (const char *s, char **answerp, char ***cmdsp, int *ncmdsp)
+{
+  const char *p;
+
+  if (s == 0)
+    return 0;
+
+  p = s;
+  while ((p = strchr (p, '{')) != 0)
+    {
+      if (baish_try_parse_answer_commands (p, answerp, cmdsp, ncmdsp))
+        return 1;
+      p++;
+    }
+
   return 0;
 }
 
