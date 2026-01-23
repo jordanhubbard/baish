@@ -1300,6 +1300,8 @@ ask_builtin (WORD_LIST *list)
   const char *autoexec = get_string_value ("BAISH_AUTOEXEC");
   const char *fail_fast = get_string_value ("BAISH_FAIL_FAST");
   const char *api_key = get_string_value ("OPENAI_API_KEY");
+  const char *os_type = get_string_value ("OSTYPE");
+  const char *cpu_arch = get_string_value ("HOSTTYPE");
   int explicit_port;
 
   models_path = 0;
@@ -1352,6 +1354,13 @@ ask_builtin (WORD_LIST *list)
       model = get_string_value ("OPENAI_MODEL");
       model_var = "OPENAI_MODEL";
     }
+
+  if (cpu_arch == 0 || *cpu_arch == 0)
+    cpu_arch = get_string_value ("MACHTYPE");
+  if (os_type == 0 || *os_type == 0)
+    os_type = "unknown";
+  if (cpu_arch == 0 || *cpu_arch == 0)
+    cpu_arch = "unknown";
 
   if (base_url == 0)
     {
@@ -1628,17 +1637,17 @@ ask_builtin (WORD_LIST *list)
     }
 
   escaped = baish_json_escape (question);
-  body = (char *)xmalloc (strlen (escaped) + strlen (model) + 1024);
+  body = (char *)xmalloc (strlen (escaped) + strlen (model) + strlen (os_type) + strlen (cpu_arch) + 1024);
   sprintf (body,
            "{"
            "\"model\":\"%s\","
            "\"stream\":false,"
            "\"messages\":["
-           "{\"role\":\"system\",\"content\":\"You are baish, a bash shell assistant. Reply with strict JSON only: {\\\"answer\\\":string,\\\"commands\\\":[string,...]}. Provide bash commands in the commands array; otherwise commands should be []. Do not include any other text.\"},"
+           "{\"role\":\"system\",\"content\":\"You are baish, a bash shell assistant. OS type: %s. CPU architecture: %s. Tailor commands as necessary for this OS type and CPU architecture. Reply with strict JSON only: {\\\"answer\\\":string,\\\"commands\\\":[string,...]}. Provide bash commands in the commands array; otherwise commands should be []. Do not include any other text.\"},"
            "{\"role\":\"user\",\"content\":\"%s\"}"
            "]"
            "}",
-           model, escaped);
+           model, os_type, cpu_arch, escaped);
 
   resp = baish_http_post_try_ports (host, port, path, api_key, body);
   free (question);
