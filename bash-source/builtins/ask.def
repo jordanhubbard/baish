@@ -1290,7 +1290,8 @@ ask_builtin (WORD_LIST *list)
   explicit_port = 0;
   if (baish_parse_http_base_url (base_url, &host, &port, &base_path, &explicit_port) == 0)
     {
-	  builtin_error (_("BAISH_OPENAI_BASE_URL must be host[:port][/v1] or http://host[:port][/v1] (no https)"));
+      builtin_error (_("BAISH_OPENAI_BASE_URL must be host[:port][/v1] or http://host[:port][/v1] (no https)"));
+      baish_print_llm_env_help ();
       free (question);
       return (EXECUTION_FAILURE);
     }
@@ -1359,8 +1360,8 @@ ask_builtin (WORD_LIST *list)
   if (baish_notice_enabled ())
     {
       char *preview;
-      preview = baish_sanitize_preview (question, 120);
-      fprintf (stderr, "baish: ask: connecting to %s (model %s) to ask: %s\n", base_url, model, preview);
+      preview = baish_sanitize_preview (question, (int)strlen (question));
+      fprintf (stderr, "Asking %s:%s %s\n", host ? host : "?", model ? model : "?", preview);
       free (preview);
       fflush (stderr);
     }
@@ -1378,6 +1379,10 @@ ask_builtin (WORD_LIST *list)
           bind_variable ("BAISH_LAST_COMMANDS", "", 0);
           if (baish_transport_error[0])
             builtin_error (_("fail-fast preflight failed: %s"), baish_transport_error);
+          else if (host && port)
+            builtin_error (_("fail-fast preflight failed (cannot reach %s:%s)"), host, port);
+          else if (host)
+            builtin_error (_("fail-fast preflight failed (cannot reach %s)"), host);
           else
             builtin_error (_("fail-fast preflight failed (cannot reach LLM)"));
           baish_print_llm_env_help ();
@@ -1448,18 +1453,22 @@ ask_builtin (WORD_LIST *list)
     {
       bind_variable ("BAISH_LAST_ANSWER", "", 0);
       bind_variable ("BAISH_LAST_COMMANDS", "", 0);
-	  if (baish_transport_error[0])
-	    builtin_error (_("request failed: %s"), baish_transport_error);
-	  else
-	    builtin_error (_("request failed (cannot reach LLM)"));
-	  baish_print_config_summary (base_url_var, base_url, model_var, model);
-	  baish_print_llm_env_help ();
-	  free (host);
-	  if (port) free (port);
-	  free (base_path);
-	  free (path);
-	  if (models_path) free (models_path);
-	  baish_free_string_list (models, nmodels);
+      if (baish_transport_error[0])
+        builtin_error (_("request failed: %s"), baish_transport_error);
+      else if (host && port)
+        builtin_error (_("request failed (cannot reach %s:%s)"), host, port);
+      else if (host)
+        builtin_error (_("request failed (cannot reach %s)"), host);
+      else
+        builtin_error (_("request failed (cannot reach LLM)"));
+      baish_print_config_summary (base_url_var, base_url, model_var, model);
+      baish_print_llm_env_help ();
+      free (host);
+      if (port) free (port);
+      free (base_path);
+      free (path);
+      if (models_path) free (models_path);
+      baish_free_string_list (models, nmodels);
       return (EXECUTION_FAILURE);
     }
 
@@ -1500,11 +1509,19 @@ ask_builtin (WORD_LIST *list)
         bind_variable ("BAISH_LAST_COMMANDS", "", 0);
         if (em)
           {
-            builtin_error (_("LLM error (HTTP %d): %s"), http_status, em);
+            if (model_error)
+              builtin_error (_("model '%s' is not available (HTTP %d): %s"), model, http_status, em);
+            else
+              builtin_error (_("LLM error (HTTP %d): %s"), http_status, em);
             free (em);
           }
         else
-          builtin_error (_("LLM error (HTTP %d)"), http_status);
+          {
+            if (model_error)
+              builtin_error (_("model '%s' is not available (HTTP %d)"), model, http_status);
+            else
+              builtin_error (_("LLM error (HTTP %d)"), http_status);
+          }
 
         baish_print_config_summary (base_url_var, base_url, model_var, model);
 
@@ -1557,6 +1574,8 @@ ask_builtin (WORD_LIST *list)
             ;
           }
 
+        baish_print_llm_env_help ();
+
         free (json);
         free (host);
         if (port) free (port);
@@ -1574,13 +1593,14 @@ ask_builtin (WORD_LIST *list)
     {
       bind_variable ("BAISH_LAST_ANSWER", "", 0);
       bind_variable ("BAISH_LAST_COMMANDS", "", 0);
-	  builtin_error (_("could not parse response"));
-	  free (host);
-	  if (port) free (port);
-	  free (base_path);
-	  free (path);
-	  if (models_path) free (models_path);
-	  baish_free_string_list (models, nmodels);
+      builtin_error (_("could not parse response"));
+      baish_print_llm_env_help ();
+      free (host);
+      if (port) free (port);
+      free (base_path);
+      free (path);
+      if (models_path) free (models_path);
+      baish_free_string_list (models, nmodels);
       return (EXECUTION_FAILURE);
     }
 
