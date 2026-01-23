@@ -40,7 +40,12 @@ Configuration variables:
   BAISH_OPENAI_PORT      Optional port override (ignored if BAISH_OPENAI_BASE_URL includes an explicit port)
   BAISH_MODEL            Model name
   BAISH_AUTOEXEC         If set (non-zero), execute returned commands without prompting
+  BAISH_FAIL_FAST         If set (non-zero), preflight the LLM (/models) before sending the prompt
   OPENAI_API_KEY         Optional bearer token
+
+Compatibility:
+  OPENAI_BASE_URL         Fallback for BAISH_OPENAI_BASE_URL
+  OPENAI_MODEL            Fallback for BAISH_MODEL
 
 Results variables:
   BAISH_LAST_ANSWER      Last answer string
@@ -313,6 +318,9 @@ static char *
 baish_http_post (const char *host, const char *port, const char *path, const char *auth_bearer, const char *body);
 
 static char *
+baish_http_get (const char *host, const char *port, const char *path, const char *auth_bearer);
+
+static char *
 baish_http_post_try_ports (const char *host, const char *port, const char *path, const char *auth_bearer, const char *body)
 {
   static const char *fallback_ports[] = { "80", "8000", 0 };
@@ -330,6 +338,173 @@ baish_http_post_try_ports (const char *host, const char *port, const char *path,
     }
 
   return 0;
+}
+
+static int
+baish_http_status_code (const char *resp)
+{
+  const char *p;
+  int code;
+
+  if (resp == 0)
+    return 0;
+  if (STREQN (resp, "HTTP/", 5) == 0)
+    return 0;
+
+  p = strchr (resp, ' ');
+  if (p == 0)
+    return 0;
+  while (*p == ' ')
+    p++;
+
+  code = atoi (p);
+  return code;
+}
+
+static char *
+baish_join_api_path (const char *base_path, const char *suffix)
+{
+  size_t bl;
+  size_t sl;
+  int need_slash;
+  char *out;
+
+  if (base_path == 0)
+    base_path = "/v1";
+  if (suffix == 0)
+    suffix = "/";
+  if (*suffix == 0)
+    suffix = "/";
+
+  bl = strlen (base_path);
+  sl = strlen (suffix);
+  need_slash = (bl == 0 || base_path[bl - 1] != '/');
+
+  out = (char *)xmalloc (bl + sl + (need_slash ? 1 : 0) + 1);
+  strcpy (out, base_path);
+  if (need_slash)
+    strcat (out, "/");
+  if (*suffix == '/')
+    strcat (out, suffix + 1);
+  else
+    strcat (out, suffix);
+  return out;
+}
+
+static char *
+baish_http_get_try_ports (const char *host, const char *port, const char *path, const char *auth_bearer)
+{
+  static const char *fallback_ports[] = { "80", "8000", 0 };
+  char *resp;
+  int i;
+
+  if (port && *port)
+    return baish_http_get (host, port, path, auth_bearer);
+
+  for (i = 0; fallback_ports[i]; i++)
+    {
+      resp = baish_http_get (host, fallback_ports[i], path, auth_bearer);
+      if (resp)
+        return resp;
+    }
+
+  return 0;
+}
+
+static char *
+baish_http_get (const char *host, const char *port, const char *path, const char *auth_bearer)
+{
+  struct addrinfo hints, *res, *rp;
+  int sfd;
+  int ga;
+  char *req;
+  size_t reqlen;
+  char *resp;
+  size_t cap, len;
+  ssize_t n;
+
+  memset (&hints, 0, sizeof (hints));
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_family = AF_UNSPEC;
+
+  ga = getaddrinfo (host, port, &hints, &res);
+  if (ga != 0)
+    return 0;
+
+  sfd = -1;
+  for (rp = res; rp; rp = rp->ai_next)
+    {
+      sfd = socket (rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+      if (sfd < 0)
+        continue;
+      if (connect (sfd, rp->ai_addr, rp->ai_addrlen) == 0)
+        break;
+      close (sfd);
+      sfd = -1;
+    }
+  freeaddrinfo (res);
+  if (sfd < 0)
+    return 0;
+
+  if (auth_bearer && *auth_bearer)
+    {
+      reqlen = strlen (host) + strlen (path) + strlen (auth_bearer) + 128;
+      req = (char *)xmalloc (reqlen);
+      snprintf (req, reqlen,
+                "GET %s HTTP/1.1\r\n"
+                "Host: %s\r\n"
+                "Authorization: Bearer %s\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                path, host, auth_bearer);
+    }
+  else
+    {
+      reqlen = strlen (host) + strlen (path) + 96;
+      req = (char *)xmalloc (reqlen);
+      snprintf (req, reqlen,
+                "GET %s HTTP/1.1\r\n"
+                "Host: %s\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                path, host);
+    }
+
+  {
+    const char *p = req;
+    size_t left = strlen (req);
+    while (left)
+      {
+        n = write (sfd, p, left);
+        if (n <= 0)
+          {
+            free (req);
+            close (sfd);
+            return 0;
+          }
+        p += n;
+        left -= (size_t)n;
+      }
+  }
+  free (req);
+
+  cap = 8192;
+  len = 0;
+  resp = (char *)xmalloc (cap);
+
+  while ((n = read (sfd, resp + len, cap - len - 1)) > 0)
+    {
+      len += (size_t)n;
+      if (len + 4096 >= cap)
+        {
+          cap *= 2;
+          resp = (char *)xrealloc (resp, cap);
+        }
+    }
+
+  close (sfd);
+  resp[len] = '\0';
+  return resp;
 }
 
 static char *
@@ -504,6 +679,118 @@ baish_http_body (const char *resp)
   if (decoded)
     return decoded;
   return savestring (body);
+}
+
+static char *
+baish_extract_error_message (const char *json)
+{
+  const char *p;
+
+  if (json == 0)
+    return 0;
+
+  p = strstr (json, "\"error\"");
+  if (p)
+    p = strstr (p, "\"message\"");
+  if (p == 0)
+    p = strstr (json, "\"message\"");
+  if (p == 0)
+    return 0;
+
+  p = strchr (p, ':');
+  if (p == 0)
+    return 0;
+  p++;
+  p = baish_skip_ws (p);
+  if (*p != '"')
+    return 0;
+
+  return baish_json_parse_string (&p);
+}
+
+static int
+baish_extract_model_ids (const char *json, char ***idsp, int *nids)
+{
+  const char *p;
+  char **ids;
+  int n;
+  int cap;
+
+  if (json == 0 || idsp == 0 || nids == 0)
+    return 0;
+
+  p = json;
+  ids = 0;
+  n = 0;
+  cap = 0;
+
+  while ((p = strstr (p, "\"id\"")) != 0)
+    {
+      p = strchr (p, ':');
+      if (p == 0)
+        break;
+      p++;
+      p = baish_skip_ws (p);
+      if (*p != '"')
+        {
+          if (*p)
+            p++;
+          continue;
+        }
+
+      {
+        char *id;
+        id = baish_json_parse_string (&p);
+        if (id == 0)
+          break;
+        if (cap == 0)
+          {
+            cap = 16;
+            ids = (char **)xmalloc (cap * sizeof (char *));
+          }
+        if (n >= cap)
+          {
+            cap *= 2;
+            ids = (char **)xrealloc (ids, cap * sizeof (char *));
+          }
+        ids[n++] = id;
+        if (n >= 200)
+          break;
+      }
+    }
+
+  if (n == 0)
+    {
+      if (ids)
+        free (ids);
+      return 0;
+    }
+
+  *idsp = ids;
+  *nids = n;
+  return 1;
+}
+
+static void
+baish_free_string_list (char **s, int n)
+{
+  int i;
+  if (s == 0)
+    return;
+  for (i = 0; i < n; i++)
+    if (s[i])
+      free (s[i]);
+  free (s);
+}
+
+static void
+baish_print_llm_env_help (void)
+{
+  fprintf (stderr, "baish: configure the LLM with environment variables:\n");
+  fprintf (stderr, "  export BAISH_OPENAI_BASE_URL=HOST[:PORT][/v1]   # or http://HOST[:PORT][/v1] (no https)\n");
+  fprintf (stderr, "  export BAISH_MODEL=MODEL_ID\n");
+  fprintf (stderr, "  export OPENAI_API_KEY=...                     # optional\n");
+  fprintf (stderr, "  export BAISH_FAIL_FAST=1                      # optional preflight\n");
 }
 
 static char *
@@ -731,22 +1018,43 @@ ask_builtin (WORD_LIST *list)
   int do_exec;
   int status;
 
+  int used_default_base_url;
+  int used_default_model;
+  char *models_path;
+  char **models;
+  int nmodels;
+  int have_models;
+
   const char *base_url = get_string_value ("BAISH_OPENAI_BASE_URL");
   const char *port_override = get_string_value ("BAISH_OPENAI_PORT");
   const char *model = get_string_value ("BAISH_MODEL");
   const char *autoexec = get_string_value ("BAISH_AUTOEXEC");
+  const char *fail_fast = get_string_value ("BAISH_FAIL_FAST");
   const char *api_key = get_string_value ("OPENAI_API_KEY");
   int explicit_port;
+
+  used_default_base_url = 0;
+  used_default_model = 0;
+  models_path = 0;
+  models = 0;
+  nmodels = 0;
+  have_models = 0;
 
   if (base_url == 0)
     base_url = get_string_value ("OPENAI_BASE_URL");
   if (base_url == 0)
-    base_url = "puck.local";
+    {
+      base_url = "puck.local";
+      used_default_base_url = 1;
+    }
 
   if (model == 0)
     model = get_string_value ("OPENAI_MODEL");
   if (model == 0)
-    model = "gpt-4o-mini";
+    {
+      model = "gpt-4o-mini";
+      used_default_model = 1;
+    }
 
   if (list)
     {
@@ -785,7 +1093,7 @@ ask_builtin (WORD_LIST *list)
   explicit_port = 0;
   if (baish_parse_http_base_url (base_url, &host, &port, &base_path, &explicit_port) == 0)
     {
-	  builtin_error (_("BAISH_OPENAI_BASE_URL must be host[:port][/v1] or http://host[:port][/v1]"));
+	  builtin_error (_("BAISH_OPENAI_BASE_URL must be host[:port][/v1] or http://host[:port][/v1] (no https)"));
       free (question);
       return (EXECUTION_FAILURE);
     }
@@ -797,17 +1105,67 @@ ask_builtin (WORD_LIST *list)
       port = savestring (port_override);
     }
 
-  {
-    const char *suffix = "/chat/completions";
-    size_t bl = strlen (base_path);
-    int need_slash = (bl == 0 || base_path[bl - 1] != '/');
+  path = baish_join_api_path (base_path, "/chat/completions");
+  models_path = baish_join_api_path (base_path, "/models");
 
-    path = (char *)xmalloc (bl + strlen (suffix) + (need_slash ? 1 : 0) + 1);
-    strcpy (path, base_path);
-    if (need_slash)
-      strcat (path, "/");
-    strcat (path, suffix + 1);
-  }
+  if (baish_truthy (fail_fast))
+    {
+      char *pre;
+      char *pbody;
+      int pstatus;
+
+      pre = baish_http_get_try_ports (host, port, models_path, api_key);
+      if (pre == 0)
+        {
+          bind_variable ("BAISH_LAST_ANSWER", "", 0);
+          bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+          builtin_error (_("fail-fast preflight failed (cannot reach LLM)"));
+          baish_print_llm_env_help ();
+          if (used_default_base_url)
+            fprintf (stderr, "baish: BAISH_OPENAI_BASE_URL not set; defaulting to %s\n", base_url);
+          if (used_default_model)
+            fprintf (stderr, "baish: BAISH_MODEL not set; defaulting to %s\n", model);
+          free (question);
+          free (host);
+          if (port) free (port);
+          free (base_path);
+          free (path);
+          free (models_path);
+          return (EXECUTION_FAILURE);
+        }
+
+      pstatus = baish_http_status_code (pre);
+      pbody = baish_http_body (pre);
+      free (pre);
+      if (pbody == 0 || pstatus != 200)
+        {
+          char *em;
+          bind_variable ("BAISH_LAST_ANSWER", "", 0);
+          bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+          em = baish_extract_error_message (pbody);
+          if (em)
+            {
+              builtin_error (_("fail-fast preflight failed (HTTP %d): %s"), pstatus, em);
+              free (em);
+            }
+          else
+            builtin_error (_("fail-fast preflight failed (HTTP %d)"), pstatus);
+          if (pbody)
+            free (pbody);
+          baish_print_llm_env_help ();
+          free (question);
+          free (host);
+          if (port) free (port);
+          free (base_path);
+          free (path);
+          free (models_path);
+          return (EXECUTION_FAILURE);
+        }
+
+      if (baish_extract_model_ids (pbody, &models, &nmodels))
+        have_models = 1;
+      free (pbody);
+    }
 
   escaped = baish_json_escape (question);
   body = (char *)xmalloc (strlen (escaped) + strlen (model) + 1024);
@@ -826,29 +1184,125 @@ ask_builtin (WORD_LIST *list)
   free (question);
   free (escaped);
   free (body);
-  free (host);
-  if (port)
-    free (port);
-  free (base_path);
-  free (path);
+  question = 0;
 
   if (resp == 0)
     {
       bind_variable ("BAISH_LAST_ANSWER", "", 0);
       bind_variable ("BAISH_LAST_COMMANDS", "", 0);
-	  builtin_error (_("request failed"));
+	  builtin_error (_("request failed (cannot reach LLM)"));
+	  baish_print_llm_env_help ();
+	  if (used_default_base_url)
+	    fprintf (stderr, "baish: BAISH_OPENAI_BASE_URL not set; defaulting to %s\n", base_url);
+	  if (used_default_model)
+	    fprintf (stderr, "baish: BAISH_MODEL not set; defaulting to %s\n", model);
+	  free (host);
+	  if (port) free (port);
+	  free (base_path);
+	  free (path);
+	  if (models_path) free (models_path);
+	  baish_free_string_list (models, nmodels);
       return (EXECUTION_FAILURE);
     }
 
-  json = baish_http_body (resp);
-  free (resp);
-  if (json == 0)
-    {
-      bind_variable ("BAISH_LAST_ANSWER", "", 0);
-      bind_variable ("BAISH_LAST_COMMANDS", "", 0);
-	  builtin_error (_("invalid HTTP response"));
-      return (EXECUTION_FAILURE);
-    }
+  {
+    int http_status;
+    http_status = baish_http_status_code (resp);
+
+    json = baish_http_body (resp);
+    free (resp);
+    resp = 0;
+
+    if (json == 0)
+      {
+        bind_variable ("BAISH_LAST_ANSWER", "", 0);
+        bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+        builtin_error (_("invalid HTTP response"));
+        baish_print_llm_env_help ();
+        free (host);
+        if (port) free (port);
+        free (base_path);
+        free (path);
+        if (models_path) free (models_path);
+        baish_free_string_list (models, nmodels);
+        return (EXECUTION_FAILURE);
+      }
+
+    if (http_status != 200)
+      {
+        char *em;
+        int model_error;
+
+        em = baish_extract_error_message (json);
+        model_error = 0;
+        if (em && baish_strcasestr (em, "model") && (baish_strcasestr (em, "not") || baish_strcasestr (em, "exist") || baish_strcasestr (em, "found")))
+          model_error = 1;
+
+        bind_variable ("BAISH_LAST_ANSWER", "", 0);
+        bind_variable ("BAISH_LAST_COMMANDS", "", 0);
+        if (em)
+          {
+            builtin_error (_("LLM error (HTTP %d): %s"), http_status, em);
+            free (em);
+          }
+        else
+          builtin_error (_("LLM error (HTTP %d)"), http_status);
+
+        if (model_error)
+          {
+            if (have_models == 0)
+              {
+                char *mresp;
+                char *mbody;
+                int mstatus;
+
+                mresp = baish_http_get_try_ports (host, port, models_path, api_key);
+                if (mresp)
+                  {
+                    mstatus = baish_http_status_code (mresp);
+                    mbody = baish_http_body (mresp);
+                    free (mresp);
+                    if (mbody && mstatus == 200)
+                      {
+                        if (baish_extract_model_ids (mbody, &models, &nmodels))
+                          have_models = 1;
+                      }
+                    if (mbody)
+                      free (mbody);
+                  }
+              }
+
+            if (have_models)
+              {
+                int j;
+                int limit;
+                fprintf (stderr, "baish: BAISH_MODEL=%s\n", model);
+                fprintf (stderr, "baish: models reported by the API (%d):\n", nmodels);
+                limit = (nmodels > 50) ? 50 : nmodels;
+                for (j = 0; j < limit; j++)
+                  fprintf (stderr, "  %s\n", models[j]);
+                if (nmodels > limit)
+                  fprintf (stderr, "  ... (%d more)\n", nmodels - limit);
+              }
+            else
+              fprintf (stderr, "baish: could not list models from %s (GET %s)\n", base_url, models_path);
+          }
+        else
+          {
+            if (used_default_model)
+              fprintf (stderr, "baish: BAISH_MODEL not set; defaulting to %s\n", model);
+          }
+
+        free (json);
+        free (host);
+        if (port) free (port);
+        free (base_path);
+        free (path);
+        if (models_path) free (models_path);
+        baish_free_string_list (models, nmodels);
+        return (EXECUTION_FAILURE);
+      }
+  }
 
   content = baish_extract_message_content (json);
   free (json);
@@ -857,6 +1311,12 @@ ask_builtin (WORD_LIST *list)
       bind_variable ("BAISH_LAST_ANSWER", "", 0);
       bind_variable ("BAISH_LAST_COMMANDS", "", 0);
 	  builtin_error (_("could not parse response"));
+	  free (host);
+	  if (port) free (port);
+	  free (base_path);
+	  free (path);
+	  if (models_path) free (models_path);
+	  baish_free_string_list (models, nmodels);
       return (EXECUTION_FAILURE);
     }
 
@@ -912,6 +1372,15 @@ ask_builtin (WORD_LIST *list)
     }
   free (joined);
   free (answer);
+
+  free (host);
+  if (port)
+    free (port);
+  free (base_path);
+  free (path);
+  if (models_path)
+    free (models_path);
+  baish_free_string_list (models, nmodels);
 
   return status;
 }
