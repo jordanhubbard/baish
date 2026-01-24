@@ -153,7 +153,7 @@ DEFSRC =  $(srcdir)/alias.def $(srcdir)/bind.def $(srcdir)/break.def \
 	  $(srcdir)/ulimit.def $(srcdir)/umask.def $(srcdir)/wait.def \
 	  $(srcdir)/reserved.def $(srcdir)/pushd.def $(srcdir)/shopt.def \
 	  $(srcdir)/printf.def $(srcdir)/complete.def $(srcdir)/mapfile.def \
-	  $(srcdir)/mcp.def
+	  $(srcdir)/ask.def $(srcdir)/mcp.def
 
 STATIC_SOURCE = common.c evalstring.c evalfile.c getopt.c bashgetopt.c \
 		getopt.h 
@@ -162,7 +162,8 @@ OFILES = builtins.o \
 	alias.o bind.o break.o builtin.o caller.o cd.o colon.o command.o \
 	common.o declare.o echo.o enable.o eval.o evalfile.o \
 	evalstring.o exec.o exit.o fc.o fg_bg.o hash.o help.o history.o \
-	jobs.o kill.o let.o mapfile.o mcp.o \
+	jobs.o kill.o let.o mapfile.o ask.o mcp.o \
+	openai_core.o openai_chat.o cJSON.o \
 	pushd.o read.o return.o set.o setattr.o shift.o source.o \
 	suspend.o test.o times.o trap.o type.o ulimit.o umask.o \
 	wait.o getopts.o shopt.o printf.o getopt.o bashgetopt.o complete.o
@@ -240,8 +241,12 @@ builtins.o: builtins.c
 common.o: common.c
 bashgetopt.o: bashgetopt.c
 getopt.o: getopt.c
-evalstring.o: evalstring.c          
+evalstring.o: evalstring.c
 evalfile.o: evalfile.c
+
+cJSON.o: cjson/cJSON.c
+	$(RM) $@
+	$(CC) -c $(CCFLAGS) $<
 
 tmpbuiltins.o: tmpbuiltins.c
 gen-helpfiles.o: gen-helpfiles.c
@@ -314,6 +319,7 @@ jobs.o: jobs.def
 kill.o: kill.def
 let.o: let.def
 mapfile.o: mapfile.def
+ask.o: ask.def
 printf.o: printf.def
 pushd.o: pushd.def
 read.o: read.def
@@ -695,6 +701,11 @@ mapfile.o: $(topdir)/quit.h $(topdir)/dispose_cmd.h $(topdir)/make_cmd.h $(topdi
 mapfile.o: $(topdir)/subst.h $(topdir)/externs.h $(BASHINCDIR)/maxpath.h
 mapfile.o: $(topdir)/shell.h $(topdir)/syntax.h $(topdir)/variables.h $(topdir)/conftypes.h
 mapfile.o: $(topdir)/arrayfunc.h ../pathnames.h
+
+cJSON.o: cjson/cJSON.c cjson/cJSON.h
+openai_core.o: openai.h cjson/cJSON.h
+openai_chat.o: openai.h cjson/cJSON.h
+ask.o: openai.h cjson/cJSON.h
 
 bind.o: $(RL_LIBSRC)/rlconf.h
 bind.o: $(RL_LIBSRC)/keymaps.h $(RL_LIBSRC)/rlstdc.h

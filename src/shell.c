@@ -1772,7 +1772,7 @@ unset_bash_input (int check_zero)
       
 
 #if !defined (PROGRAM)
-#  define PROGRAM "bash"
+#  define PROGRAM "baish"
 #endif
 
 static void

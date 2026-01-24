@@ -1,116 +1,138 @@
 # baish
-A version of bash that also knows what you were probably _trying_ to do.
 
-## Repository Structure
+`baish` is a fork of GNU Bash (based on Bash 5.3 sources) with an integrated OpenAI-compatible chatbot builtin.
 
-```
-├── bash-handbook-review/
-│   └── REVIEW.md                # Comprehensive review of the bash-handbook
-├── bash-source/
-│   ├── builtins/
-│   │   └── mcp.def             # MCP builtin implementation
-│   ├── test-mcp.sh             # MCP test script
-│   └── README.md               # Instructions for bash 5.3 source
-├── IMPLEMENTATION-SUMMARY.md   # MCP implementation details
-├── MCP-IMPLEMENTATION.md       # MCP feature documentation
-├── LICENSE
-└── README.md                   # This file
-```
+It adds an `ask` builtin (and `?{...}` sugar) that calls an OpenAI-compatible API to answer questions and optionally suggest shell commands.
 
-## Features
+## Build / run / test
 
-### MCP (Managed Control Points) Support ✨ NEW
-
-Baish now includes AI-enabled functionality through MCP (Managed Control Points) integration:
-
-- **`mcp connect <server>`** - Connect to MCP servers for AI-powered capabilities
-- **`mcp disconnect`** - Disconnect from active MCP server
-- **`mcp list`** - List available commands from connected MCP server
-
-See [MCP-IMPLEMENTATION.md](MCP-IMPLEMENTATION.md) for complete documentation and usage examples.
-
-#### Quick Start
+Preferred (top-level Makefile):
 
 ```bash
-# Build baish with MCP support
+make build
+make run RUN_ARGS='-c "echo hello"'
+make test
+```
+
+Manual (bash build system):
+
+```bash
 cd bash-source
 ./configure
-make
-
-# Test MCP functionality
-./bash test-mcp.sh
-
-# Connect to an MCP server (requires running MCP server)
-./bash -c "mcp connect localhost:8080"
-./bash -c "mcp list"
-./bash -c "mcp disconnect"
+make -j4
+make tests
 ```
 
-#### Requirements
+The resulting shell binary is `bash-source/baish`.
 
-- libcurl development library (`libcurl4-openssl-dev` on Ubuntu/Debian)
-- Standard build tools (gcc, make, etc.)
+## Install
 
-## Development Resources
-
-### 1. Bash Handbook Review
-Located in `bash-handbook-review/REVIEW.md`, this document provides:
-- Overview of bash fundamentals from https://github.com/denysdovhan/bash-handbook
-- Key concepts and features
-- Common user mistakes to address
-- Insights for implementing intelligent error correction
-- Relevance to the baish project goals
-
-### 2. Bash Source Code Reference
-The `bash-source/` directory contains the bash 5.3 source code with baish enhancements. Having access to the actual bash implementation helps with:
-- Understanding bash's internal behavior
-- Ensuring compatibility
-- Learning from established patterns
-- Implementing similar features with enhancements
-
-See `bash-source/README.md` for build instructions.
-
-## Key Features to Implement
-
-Based on the bash handbook review, baish could help with:
-- Variable quoting mistakes
-- Typos in command names
-- Incorrect conditional syntax
-- Misused exit codes
-- Array handling errors
-- Redirection mistakes
-- Common scripting anti-patterns
-
-## Building from Source
+The top-level Makefile installs the built binary into `$(PREFIX)/bin` (default: `~/.local/bin`):
 
 ```bash
-# Install dependencies (Ubuntu/Debian)
-sudo apt-get install build-essential libcurl4-openssl-dev
-
-# Configure and build
-cd bash-source
-./configure --prefix=/usr/local
-make
-
-# Run tests
-./bash test-mcp.sh
-
-# Install (optional)
-sudo make install
+make install
+# or
+make install PREFIX=/usr/local
 ```
 
-## Contributing
+## AI configuration (environment variables)
 
-Contributions are welcome! When adding new features:
+Required:
 
-1. Follow bash's established patterns for built-ins
-2. Ensure memory safety (check all allocations)
-3. Add comprehensive tests
-4. Update documentation
-5. Run security checks
+- `BAISH_OPENAI_BASE_URL` – least-info-first host/base URL. Any of these work:
+  - `llm-host`
+  - `llm-host:8000`
+  - `http://llm-host/v1`
+  - `http://llm-host:8000/v1`
+- `BAISH_MODEL` – model name (your server’s model id)
 
-See [IMPLEMENTATION-SUMMARY.md](IMPLEMENTATION-SUMMARY.md) for development insights.
+Optional:
 
-## License
+- `BAISH_OPENAI_PORT` – port override **only** when `BAISH_OPENAI_BASE_URL` does **not** include an explicit `:port`
+- `OPENAI_API_KEY` – bearer token if your server requires auth
+- `BAISH_AUTOEXEC` – if non-zero, execute returned commands without prompting (default: `0`)
 
-Baish is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+If no port is provided, `baish` will try common HTTP ports (currently `80`, then `8000`).
+
+## Using the LLM
+
+### `ask` builtin
+
+```bash
+ask "how do I list files by size?"
+ask -c "show me the 10 largest files"
+ask -j "emit JSON only for this question"
+```
+
+The model is instructed to return JSON of the form:
+
+```json
+{"answer":"...","commands":["..."]}
+```
+
+If `commands` are returned:
+- default: `baish` prints the commands as a list and does not execute them
+- `ask -c`: execute returned commands without prompting (same as `BAISH_AUTOEXEC=1` for the invocation)
+- `ask -j`: print the raw JSON response only and do not execute anything
+
+Useful result variables:
+
+- `BAISH_LAST_ANSWER`
+- `BAISH_LAST_COMMANDS` (newline-separated)
+
+### `mcp` builtin
+
+The `mcp` builtin enables connecting to external MCP (Managed Control Points) servers for AI-enabled functionality:
+
+```bash
+mcp connect localhost:8080     # Connect to an MCP server
+mcp list                       # List available commands from the MCP
+mcp disconnect                 # Disconnect from the MCP server
+```
+
+**Requirements:** `libcurl4-openssl-dev` (or equivalent) must be installed at build time.
+
+The MCP implementation provides:
+- HTTP/HTTPS communication with MCP servers
+- Connection state management
+- Timeout and error handling (5s connect, 10s operation timeout)
+
+For detailed documentation, see `MCP-IMPLEMENTATION.md`.
+
+### `?{ ... }` syntax sugar
+
+`?{question}` is equivalent to `ask "question"`.
+
+```bash
+?{what is the command to find large files in this directory?}
+```
+
+## Working examples
+
+```bash
+export BAISH_OPENAI_BASE_URL=llm-host
+export BAISH_MODEL=MODEL_ID
+
+./bash-source/baish -c '?{what is 2+2?}'
+./bash-source/baish -c 'ask "give me a one-liner to show disk usage by directory"'
+```
+
+Interactive example:
+
+```bash
+export BAISH_OPENAI_BASE_URL=llm-host
+export BAISH_MODEL=MODEL_ID
+
+./bash-source/baish
+ask "write a safe command to list the 20 largest files under the current directory"
+```
+
+If your server is running on a non-default port:
+
+```bash
+export BAISH_OPENAI_BASE_URL=llm-host
+export BAISH_OPENAI_PORT=8000
+export BAISH_MODEL=MODEL_ID
+
+./bash-source/baish -c '?{write a safe rm command to delete ./tmp only}'
+```
