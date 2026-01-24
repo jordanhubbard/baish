@@ -1,0 +1,293 @@
+This file is mcp.def, from which is created mcp.c.
+It implements the builtin "mcp" in Bash for MCP (Managed Control Points) support.
+
+Copyright (C) 2025 Free Software Foundation, Inc.
+
+This file is part of GNU Bash, the Bourne Again SHell.
+
+Bash is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+Bash is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+
+$PRODUCES mcp.c
+
+$BUILTIN mcp
+$FUNCTION mcp_builtin
+$SHORT_DOC mcp [connect servername | disconnect | list]
+Manage MCP (Managed Control Points) connections.
+
+The mcp command provides AI-enabled functionality through MCP servers.
+
+Subcommands:
+  connect servername    Connect to the specified MCP server
+  disconnect            Disconnect from the currently connected MCP
+  list                  List available commands from the connected MCP
+
+Exit Status:
+Returns success unless an invalid option is given or connection fails.
+$END
+
+#include <config.h>
+
+#include <stdio.h>
+#include <string.h>
+
+#if defined (HAVE_UNISTD_H)
+#  include <unistd.h>
+#endif
+
+#include <curl/curl.h>
+
+#include "../bashansi.h"
+#include "../bashintl.h"
+#include "../shell.h"
+#include "../builtins.h"
+#include "common.h"
+#include "bashgetopt.h"
+
+/* MCP connection state */
+static char *mcp_current_server = NULL;
+static int mcp_connected = 0;
+
+/* Callback for libcurl to write response data */
+struct mcp_response {
+  char *data;
+  size_t size;
+};
+
+static size_t
+write_callback(void *contents, size_t size, size_t nmemb, void *userp)
+{
+  size_t realsize = size * nmemb;
+  struct mcp_response *resp = (struct mcp_response *)userp;
+  
+  char *ptr = realloc(resp->data, resp->size + realsize + 1);
+  if (ptr == NULL) {
+    /* Out of memory - data will be freed by caller */
+    return 0;
+  }
+  
+  resp->data = ptr;
+  memcpy(&(resp->data[resp->size]), contents, realsize);
+  resp->size += realsize;
+  resp->data[resp->size] = 0;
+  
+  return realsize;
+}
+
+/* Connect to an MCP server */
+static int
+mcp_connect(const char *servername)
+{
+  CURL *curl;
+  CURLcode res;
+  struct mcp_response response;
+  char url[512];
+  
+  if (mcp_connected && mcp_current_server != NULL) {
+    builtin_warning(_("already connected to MCP server '%s'"), mcp_current_server);
+    builtin_warning(_("disconnect first before connecting to a new server"));
+    return EXECUTION_FAILURE;
+  }
+  
+  response.data = malloc(1);
+  if (response.data == NULL) {
+    builtin_error(_("out of memory"));
+    return EXECUTION_FAILURE;
+  }
+  response.size = 0;
+  
+  /* Initialize curl */
+  curl = curl_easy_init();
+  if (!curl) {
+    builtin_error(_("failed to initialize curl"));
+    free(response.data);
+    return EXECUTION_FAILURE;
+  }
+  
+  /* Build URL - assume HTTP for now, could be extended to HTTPS */
+  snprintf(url, sizeof(url), "http://%s/health", servername);
+  
+  /* Set curl options */
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&response);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+  
+  /* Perform the request */
+  res = curl_easy_perform(curl);
+  
+  if (res != CURLE_OK) {
+    builtin_error(_("failed to connect to MCP server '%s': %s"), 
+                  servername, curl_easy_strerror(res));
+    curl_easy_cleanup(curl);
+    free(response.data);
+    return EXECUTION_FAILURE;
+  }
+  
+  /* Check HTTP response code */
+  long response_code;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+  
+  curl_easy_cleanup(curl);
+  free(response.data);
+  
+  if (response_code != 200) {
+    builtin_error(_("MCP server '%s' returned HTTP %ld"), servername, response_code);
+    return EXECUTION_FAILURE;
+  }
+  
+  /* Store connection state */
+  if (mcp_current_server != NULL) {
+    free(mcp_current_server);
+  }
+  mcp_current_server = strdup(servername);
+  if (mcp_current_server == NULL) {
+    builtin_error(_("out of memory"));
+    return EXECUTION_FAILURE;
+  }
+  mcp_connected = 1;
+  
+  printf(_("Connected to MCP server: %s\n"), servername);
+  
+  return EXECUTION_SUCCESS;
+}
+
+/* Disconnect from the current MCP server */
+static int
+mcp_disconnect(void)
+{
+  if (!mcp_connected || mcp_current_server == NULL) {
+    builtin_error(_("not connected to any MCP server"));
+    return EXECUTION_FAILURE;
+  }
+  
+  printf(_("Disconnected from MCP server: %s\n"), mcp_current_server);
+  
+  free(mcp_current_server);
+  mcp_current_server = NULL;
+  mcp_connected = 0;
+  
+  return EXECUTION_SUCCESS;
+}
+
+/* List commands available from the MCP server */
+static int
+mcp_list(void)
+{
+  CURL *curl;
+  CURLcode res;
+  struct mcp_response response;
+  char url[512];
+  
+  if (!mcp_connected || mcp_current_server == NULL) {
+    builtin_error(_("not connected to any MCP server"));
+    return EXECUTION_FAILURE;
+  }
+  
+  response.data = malloc(1);
+  if (response.data == NULL) {
+    builtin_error(_("out of memory"));
+    return EXECUTION_FAILURE;
+  }
+  response.size = 0;
+  
+  curl = curl_easy_init();
+  if (!curl) {
+    builtin_error(_("failed to initialize curl"));
+    free(response.data);
+    return EXECUTION_FAILURE;
+  }
+  
+  /* Build URL for listing commands */
+  snprintf(url, sizeof(url), "http://%s/commands", mcp_current_server);
+  
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&response);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+  
+  res = curl_easy_perform(curl);
+  
+  if (res != CURLE_OK) {
+    builtin_error(_("failed to get commands from MCP server: %s"), 
+                  curl_easy_strerror(res));
+    curl_easy_cleanup(curl);
+    free(response.data);
+    return EXECUTION_FAILURE;
+  }
+  
+  long response_code;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+  
+  if (response_code != 200) {
+    builtin_error(_("MCP server returned HTTP %ld"), response_code);
+    curl_easy_cleanup(curl);
+    free(response.data);
+    return EXECUTION_FAILURE;
+  }
+  
+  printf(_("Available MCP commands:\n"));
+  if (response.size > 0) {
+    printf("%s\n", response.data);
+  } else {
+    printf(_("  (no commands available)\n"));
+  }
+  
+  curl_easy_cleanup(curl);
+  free(response.data);
+  
+  return EXECUTION_SUCCESS;
+}
+
+/* Main mcp builtin function */
+int
+mcp_builtin(WORD_LIST *list)
+{
+  char *command;
+  
+  /* Initialize curl library on first use */
+  static int curl_initialized = 0;
+  if (!curl_initialized) {
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl_initialized = 1;
+  }
+  
+  if (list == 0) {
+    builtin_usage();
+    return EX_USAGE;
+  }
+  
+  command = list->word->word;
+  
+  if (STREQ(command, "connect")) {
+    list = list->next;
+    if (list == 0) {
+      builtin_error(_("connect: server name required"));
+      return EX_USAGE;
+    }
+    return mcp_connect(list->word->word);
+  }
+  else if (STREQ(command, "disconnect")) {
+    return mcp_disconnect();
+  }
+  else if (STREQ(command, "list")) {
+    return mcp_list();
+  }
+  else {
+    builtin_error(_("unknown subcommand: %s"), command);
+    builtin_usage();
+    return EX_USAGE;
+  }
+}

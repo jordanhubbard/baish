@@ -80,6 +80,25 @@ Useful result variables:
 - `BAISH_LAST_ANSWER`
 - `BAISH_LAST_COMMANDS` (newline-separated)
 
+### `mcp` builtin
+
+The `mcp` builtin enables connecting to external MCP (Managed Control Points) servers for AI-enabled functionality:
+
+```bash
+mcp connect localhost:8080     # Connect to an MCP server
+mcp list                       # List available commands from the MCP
+mcp disconnect                 # Disconnect from the MCP server
+```
+
+**Requirements:** `libcurl4-openssl-dev` (or equivalent) must be installed at build time.
+
+The MCP implementation provides:
+- HTTP/HTTPS communication with MCP servers
+- Connection state management
+- Timeout and error handling (5s connect, 10s operation timeout)
+
+For detailed documentation, see `MCP-IMPLEMENTATION.md`.
+
 ### `?{ ... }` syntax sugar
 
 `?{question}` is equivalent to `ask "question"`.

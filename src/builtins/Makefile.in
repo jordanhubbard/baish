@@ -153,7 +153,7 @@ DEFSRC =  $(srcdir)/alias.def $(srcdir)/bind.def $(srcdir)/break.def \
 	  $(srcdir)/ulimit.def $(srcdir)/umask.def $(srcdir)/wait.def \
 	  $(srcdir)/reserved.def $(srcdir)/pushd.def $(srcdir)/shopt.def \
 	  $(srcdir)/printf.def $(srcdir)/complete.def $(srcdir)/mapfile.def \
-	  $(srcdir)/ask.def
+	  $(srcdir)/ask.def $(srcdir)/mcp.def
 
 STATIC_SOURCE = common.c evalstring.c evalfile.c getopt.c bashgetopt.c \
 		getopt.h 
@@ -162,7 +162,7 @@ OFILES = builtins.o \
 	alias.o bind.o break.o builtin.o caller.o cd.o colon.o command.o \
 	common.o declare.o echo.o enable.o eval.o evalfile.o \
 	evalstring.o exec.o exit.o fc.o fg_bg.o hash.o help.o history.o \
-	jobs.o kill.o let.o mapfile.o ask.o \
+	jobs.o kill.o let.o mapfile.o ask.o mcp.o \
 	openai_core.o openai_chat.o cJSON.o \
 	pushd.o read.o return.o set.o setattr.o shift.o source.o \
 	suspend.o test.o times.o trap.o type.o ulimit.o umask.o \

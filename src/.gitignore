@@ -1,0 +1,53 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# Executables
+bash
+bashversion
+mksignames
+mksyntax
+mkbuiltins
+
+# Generated files
+builtext.h
+builtins.c
+config.h
+config.log
+config.status
+buildconf.h
+pathnames.h
+version.h
+syntax.c
+signames.h
+lsignames.h
+pipesize.h
+psize.aux
+stamp-h
+stdckdint.h
+y.tab.c
+y.tab.h
+
+# Makefiles generated from Makefile.in
+Makefile
+builtins/Makefile
+lib/*/Makefile
+doc/Makefile
+support/Makefile
+po/Makefile
+po/Makefile.in
+po/POTFILES
+examples/loadables/Makefile
+examples/loadables/Makefile.inc
+examples/loadables/Makefile.sample
+examples/loadables/perl/Makefile
+
+# Generated support files
+support/bash.pc
+support/bashbug.sh
+
+# Build marker
+.build
