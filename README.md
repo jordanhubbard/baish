@@ -4,6 +4,14 @@
 
 It adds an `ask` builtin (and `?{...}` sugar) that calls an OpenAI-compatible API to answer questions and optionally suggest shell commands.
 
+# Why make this a built-in function rather than an external executable?
+
+- It not only provides the variable expansion feature but can also do intelligent connection caching, making subsequent 'asks' much faster.
+- All of the shell variables for controlling the behavior of ask are already built-in and can be set in your .bashrc
+- Persistent connection tracking per bash pid would be a heavy lift for any external command.
+- I wanted to figure out how to add builtins to bash, and this seemed like an interesting project.
+- Because someday, all models will run 100% locally as an API call, so I thought this might be a nice trial run at the problem!
+- 
 ## Build / run / test
 
 Preferred (top-level Makefile):
