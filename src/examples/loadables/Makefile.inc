@@ -24,7 +24,7 @@ PACKAGE_NAME = bash
 PACKAGE_VERSION = 5.3-release
 
 # Include some boilerplate Gnu makefile definitions.
-prefix = /tmp/bash-build
+prefix = /tmp/baish-test
 
 exec_prefix = ${prefix}
 bindir = ${exec_prefix}/bin
@@ -38,7 +38,7 @@ loadablesdir = ${libdir}/bash
 headersdir = $(includedir)/$(PACKAGE_NAME)
 
 topdir = ../..
-BUILD_DIR = /home/runner/work/baish/baish/bash-source
+BUILD_DIR = /home/runner/work/baish/baish/src
 srcdir = .
 
 
