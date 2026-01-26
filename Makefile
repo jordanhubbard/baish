@@ -10,7 +10,7 @@ DESTDIR ?=
 
 CONFIGURE_ARGS ?=
 
-.PHONY: all configure build run test install uninstall clean distclean help
+.PHONY: all configure build run test install uninstall clean distclean help release release-minor release-major
 
 all: build
 
@@ -46,9 +46,24 @@ distclean:
 help:
 	@printf "%s\n" \
 		"Targets:" \
-		"  build     Configure (if needed) and build baish" \
-		"  run       Run baish (pass args via RUN_ARGS=...)" \
-		"  test      Run baish tests (bash test suite)" \
-		"  install   Install baish to $(DESTDIR)$(PREFIX)/bin" \
-		"  clean     Clean build outputs" \
-		"  distclean Remove configure outputs (requires reconfigure)"
+		"  build         Configure (if needed) and build baish" \
+		"  run           Run baish (pass args via RUN_ARGS=...)" \
+		"  test          Run baish tests (bash test suite)" \
+		"  install       Install baish to $(DESTDIR)$(PREFIX)/bin" \
+		"  clean         Clean build outputs" \
+		"  distclean     Remove configure outputs (requires reconfigure)" \
+		"  release       Create a patch release (X.Y.Z-baish.B+1)" \
+		"  release-minor Create a minor release (X.Y+1.0-baish.1)" \
+		"  release-major Create a major release (X+1.0.0-baish.1)"
+
+release:
+	@echo "Creating patch release..."
+	@./scripts/release.sh patch
+
+release-minor:
+	@echo "Creating minor release..."
+	@./scripts/release.sh minor
+
+release-major:
+	@echo "Creating major release..."
+	@./scripts/release.sh major
