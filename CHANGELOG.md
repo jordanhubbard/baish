@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses a version scheme of MAJOR.MINOR.PATCH-baish.BUILD.
 
 ## [Unreleased]
+## [5.3.0-baish.3] - 2026-01-26
+
+### Changes
+
+- Continue refactoring ask_builtin function
+- Fix use-after-free bug and begin function refactoring
+- Complete low-priority code quality improvements
+
+
 ## [5.3.0-baish.2] - 2026-01-26
 
 ### Changes

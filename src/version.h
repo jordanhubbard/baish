@@ -5,7 +5,7 @@
 #define DISTVERSION "5.3"
 
 /* The last built version of this shell. */
-#define BUILDVERSION 2
+#define BUILDVERSION 3
 
 /* The release status of this shell. */
 #define RELSTATUS "release"
