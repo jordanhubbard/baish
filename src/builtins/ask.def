@@ -2055,6 +2055,57 @@ baish_build_request_body (const char *question, const char *model,
   return body;
 }
 
+/* Parse LLM response, extract answer and commands, bind to shell variables.
+   Returns 0 on success, displaying answer if appropriate.
+   Sets answer_out and cmds_out which caller must free. */
+static int
+baish_parse_and_bind_response (char *content, int explicit_run_commands,
+                                char **answer_out, char ***cmds_out, int *ncmds_out)
+{
+  char *sanitized;
+  char *answer;
+  char **cmds;
+  int ncmds;
+  char *joined;
+
+  /* Strip think blocks from content */
+  sanitized = baish_strip_think_blocks (content);
+  free (content);
+  content = sanitized;
+
+  /* Parse answer and commands from JSON */
+  answer = 0;
+  cmds = 0;
+  ncmds = 0;
+  if (baish_parse_answer_commands (content, &answer, &cmds, &ncmds) == 0)
+    {
+      /* Parsing failed, use entire content as answer */
+      answer = savestring (content);
+      cmds = 0;
+      ncmds = 0;
+    }
+  free (content);
+
+  /* Join commands and bind to shell variables */
+  joined = baish_join_commands (cmds, ncmds);
+  bind_variable ("BAISH_LAST_ANSWER", answer, 0);
+  bind_variable ("BAISH_LAST_COMMANDS", joined, 0);
+  free (joined);
+
+  /* Display answer if not running commands or no commands present */
+  if (explicit_run_commands == 0 || ncmds == 0)
+    {
+      printf ("%s\n", answer);
+      fflush (stdout);
+    }
+
+  *answer_out = answer;
+  *cmds_out = cmds;
+  *ncmds_out = ncmds;
+
+  return 0;
+}
+
 int
 ask_builtin (WORD_LIST *list)
 {
@@ -2069,7 +2120,6 @@ ask_builtin (WORD_LIST *list)
   char *answer;
   char **cmds;
   int ncmds;
-  char *joined;
   int status;
   int run_commands;
   int explicit_run_commands;
@@ -2562,37 +2612,10 @@ ask_builtin (WORD_LIST *list)
         return (EXECUTION_FAILURE);
       }
 
-    {
-      char *sanitized;
-      sanitized = baish_strip_think_blocks (content);
-      free (content);
-      content = sanitized;
-    }
   }
 
-  answer = 0;
-  cmds = 0;
-  ncmds = 0;
-  if (baish_parse_answer_commands (content, &answer, &cmds, &ncmds) == 0)
-    {
-      answer = savestring (content);
-      cmds = 0;
-      ncmds = 0;
-    }
-  free (content);
-
-  joined = baish_join_commands (cmds, ncmds);
-  bind_variable ("BAISH_LAST_ANSWER", answer, 0);
-  bind_variable ("BAISH_LAST_COMMANDS", joined, 0);
-
-  if (explicit_run_commands == 0 || ncmds == 0)
-    {
-      printf ("%s\n", answer);
-      fflush (stdout);
-    }
-
+  baish_parse_and_bind_response (content, explicit_run_commands, &answer, &cmds, &ncmds);
   status = baish_execute_or_display_commands (cmds, ncmds, run_commands);
-  free (joined);
   free (answer);
 
   free (host);
