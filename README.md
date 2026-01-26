@@ -176,3 +176,45 @@ export BAISH_MODEL=MODEL_ID
 
 ./bash-source/baish -c '?{write a safe rm command to delete ./tmp only}'
 ```
+
+## Development
+
+### Code Conventions
+
+The baish codebase follows consistent naming conventions:
+
+**Environment Variables:**
+- All baish-specific environment variables use `BAISH_*` prefix in uppercase
+- Examples: `BAISH_OPENAI_BASE_URL`, `BAISH_MODEL`, `BAISH_AUTOEXEC`
+- This follows standard shell conventions for environment variables
+
+**C Functions:**
+- All baish-specific functions use `baish_*` prefix in lowercase with underscores
+- Examples: `baish_parse_http_base_url()`, `baish_json_escape()`, `baish_slurp_stream()`
+- This follows standard C naming conventions and prevents namespace collisions with bash internals
+
+**Result Variables:**
+- Shell variables set by builtins use `BAISH_LAST_*` prefix in uppercase
+- Examples: `BAISH_LAST_ANSWER`, `BAISH_LAST_COMMANDS`
+- Makes it clear these are result variables from the last operation
+
+**Rationale:**
+This naming scheme ensures:
+- Clear distinction between user-facing shell variables and internal C functions
+- No naming conflicts with bash's existing functions and variables
+- Consistent, predictable naming for contributors
+- Standard C and shell scripting conventions are followed
+
+### Testing
+
+Run the full test suite:
+```bash
+make test
+```
+
+Integration tests with mock servers:
+```bash
+./tests/integration-test.sh
+```
+
+For development and contribution guidelines, see `RELEASING.md` for the release process.
