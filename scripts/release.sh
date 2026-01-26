@@ -271,7 +271,10 @@ create_version_commit() {
 
     info "Creating version bump commit..."
 
-    git add "$VERSION_H" "$PATCHLEVEL_H" "$CHANGELOG"
+    # Force add version files since they're in .gitignore (generated files)
+    # but we want to track version changes in release commits
+    git add -f "$VERSION_H" "$PATCHLEVEL_H"
+    git add "$CHANGELOG"
     git commit -m "Bump version to $version
 
 - Update DISTVERSION, PATCHLEVEL, and BUILDVERSION
