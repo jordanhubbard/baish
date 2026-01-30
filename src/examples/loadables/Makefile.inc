@@ -24,7 +24,7 @@ PACKAGE_NAME = bash
 PACKAGE_VERSION = 5.3-release
 
 # Include some boilerplate Gnu makefile definitions.
-prefix = /tmp/baish-test
+prefix = /usr/local
 
 exec_prefix = ${prefix}
 bindir = ${exec_prefix}/bin
@@ -38,7 +38,7 @@ loadablesdir = ${libdir}/bash
 headersdir = $(includedir)/$(PACKAGE_NAME)
 
 topdir = ../..
-BUILD_DIR = /home/runner/work/baish/baish/src
+BUILD_DIR = /Users/shedwards/src/baish/src
 srcdir = .
 
 
@@ -57,12 +57,12 @@ RM = rm -f
 
 SHELL = /bin/sh
 
-host_os = linux-gnu
-host_cpu = x86_64
-host_vendor = pc
+host_os = darwin25.2.0
+host_cpu = aarch64
+host_vendor = apple
 
 CFLAGS = -g -O2
-LOCAL_CFLAGS = 
+LOCAL_CFLAGS = -DMACOSX
 DEFS = -DHAVE_CONFIG_H
 LOCAL_DEFS = -DSHELL
 
@@ -76,8 +76,8 @@ LIBBUILD = ${BUILD_DIR}/lib
 
 INTL_LIBSRC = ${topdir}/lib/intl
 INTL_BUILDDIR = ${LIBBUILD}/intl
-INTL_INC = 
-LIBINTL_H = 
+INTL_INC = -I${INTL_LIBSRC} -I${INTL_BUILDDIR}
+LIBINTL_H = ${INTL_BUILDDIR}/libintl.h
 
 CCFLAGS = $(DEFS) $(LOCAL_DEFS) $(LOCAL_CFLAGS) $(CFLAGS)
 
@@ -88,9 +88,9 @@ CCFLAGS = $(DEFS) $(LOCAL_DEFS) $(LOCAL_CFLAGS) $(CFLAGS)
 # changes to bash-maintainers@gnu.org.
 #
 SHOBJ_CC = gcc
-SHOBJ_CFLAGS = -fPIC
+SHOBJ_CFLAGS = -fno-common
 SHOBJ_LD = ${CC}
-SHOBJ_LDFLAGS = -shared -Wl,-soname,$@ 
+SHOBJ_LDFLAGS = -dynamiclib -dynamic -undefined dynamic_lookup  
 SHOBJ_XLDFLAGS = 
 SHOBJ_LIBS = 
 SHOBJ_STATUS = supported
