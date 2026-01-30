@@ -76,6 +76,7 @@ unalias -- fum
 [
 [[ ... ]]
 alias
+ask
 bg
 bind
 break
@@ -115,6 +116,7 @@ let
 local
 logout
 mapfile
+mcp
 popd
 printf
 pushd
@@ -235,6 +237,7 @@ xpg_echo
 :
 [
 alias
+ask
 bg
 bind
 break
@@ -268,6 +271,7 @@ let
 local
 logout
 mapfile
+mcp
 popd
 printf
 pushd
@@ -296,6 +300,7 @@ wait
 :
 [
 alias
+ask
 bg
 bind
 break
@@ -329,6 +334,7 @@ let
 local
 logout
 mapfile
+mcp
 popd
 printf
 pushd

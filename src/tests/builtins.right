@@ -350,6 +350,7 @@ A star (*) next to a name means that the command is disabled.
  [ arg... ]                              local [option] name[=value] ...
  [[ expression ]]                        logout [n]
  alias [-p] [name[=value] ... ]          mapfile [-d delim] [-n count] [-O or>
+ ask [-c] [-j] [question...]             mcp [connect servername | disconnect>
  bg [job_spec ...]                       popd [-n] [+N | -N]
  bind [-lpsvPSVX] [-m keymap] [-f file>  printf [-v var] format [arguments]
  break [n]                               pushd [-n] [+N | -N | dir]
@@ -443,6 +444,7 @@ A star (*) next to a name means that the command is disabled.
  [ arg... ]                              local [option] name[=value] ...
  [[ expression ]]                        logout [n]
  alias [-p] [name[=value] ... ]          mapfile [-d delim] [-n count] [-O or>
+ ask [-c] [-j] [question...]             mcp [connect servername | disconnect>
  bg [job_spec ...]                       popd [-n] [+N | -N]
  bind [-lpsvPSVX] [-m keymap] [-f file>  printf [-v var] format [arguments]
  break [n]                               pushd [-n] [+N | -N | dir]
