@@ -47,10 +47,26 @@ depends:
 	@echo "Installing build dependencies..."
 	@if command -v apt-get >/dev/null 2>&1; then \
 		echo "Detected apt-get (Debian/Ubuntu/WSL)"; \
-		sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev; \
+		echo "Installing build dependencies..."; \
+		sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev locales; \
+		echo "Generating locales for test suite..."; \
+		sudo locale-gen en_US.UTF-8 || true; \
+		sudo locale-gen zh_TW.BIG5 || true; \
+		sudo locale-gen de_DE.UTF-8 || true; \
+		sudo locale-gen fr_FR.ISO-8859-1 || true; \
+		sudo locale-gen ja_JP.SJIS || true; \
+		sudo update-locale LANG=en_US.UTF-8 || true; \
 	elif command -v apt >/dev/null 2>&1; then \
 		echo "Detected apt (Debian/Ubuntu/WSL)"; \
-		sudo apt update && sudo apt install -y libcurl4-openssl-dev; \
+		echo "Installing build dependencies..."; \
+		sudo apt update && sudo apt install -y libcurl4-openssl-dev locales; \
+		echo "Generating locales for test suite..."; \
+		sudo locale-gen en_US.UTF-8 || true; \
+		sudo locale-gen zh_TW.BIG5 || true; \
+		sudo locale-gen de_DE.UTF-8 || true; \
+		sudo locale-gen fr_FR.ISO-8859-1 || true; \
+		sudo locale-gen ja_JP.SJIS || true; \
+		sudo update-locale LANG=en_US.UTF-8 || true; \
 	elif command -v brew >/dev/null 2>&1; then \
 		echo "Detected brew (macOS)"; \
 		brew install curl; \
@@ -60,7 +76,7 @@ depends:
 	else \
 		echo "Error: Could not detect package manager"; \
 		echo "Please install libcurl development headers manually:"; \
-		echo "  - Debian/Ubuntu/WSL: sudo apt-get install libcurl4-openssl-dev"; \
+		echo "  - Debian/Ubuntu/WSL: sudo apt-get install libcurl4-openssl-dev locales"; \
 		echo "  - macOS: brew install curl"; \
 		echo "  - FreeBSD: sudo pkg install curl"; \
 		exit 1; \

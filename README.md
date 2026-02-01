@@ -22,10 +22,10 @@ First, install build dependencies (requires sudo):
 make depends
 ```
 
-This will install `libcurl4-openssl-dev` which is required for the `ask` and `mcp` builtins. The `make depends` target automatically detects your package manager (apt/brew/pkg) and installs the necessary dependencies.
+This will install `libcurl4-openssl-dev` which is required for the `ask` and `mcp` builtins. On Debian/Ubuntu/WSL, it also installs and configures locales needed for the test suite. The `make depends` target automatically detects your package manager (apt/brew/pkg) and installs the necessary dependencies.
 
 For manual installation:
-- **Debian/Ubuntu/WSL**: `sudo apt-get install libcurl4-openssl-dev`
+- **Debian/Ubuntu/WSL**: `sudo apt-get install libcurl4-openssl-dev locales`
 - **macOS**: `brew install curl`
 - **FreeBSD**: `sudo pkg install curl`
 
