@@ -1500,6 +1500,269 @@ baish_print_llm_env_help (void)
   fprintf (stderr, "  export BAISH_HTTP_TIMEOUT_SECS=15             # optional transport timeout\n");
 }
 
+/* Read a line from stdin with a prompt, allowing editing. Trims trailing whitespace.
+   Returns allocated string that caller must free, or NULL on EOF. */
+static char *
+baish_read_line_with_default (const char *prompt, const char *default_val)
+{
+  char buf[512];
+  char *p;
+  char *result;
+
+  if (interactive_shell == 0 || isatty (fileno (stdin)) == 0)
+    return NULL;
+
+  if (default_val && *default_val)
+    fprintf (stderr, "%s [%s]: ", prompt, default_val);
+  else
+    fprintf (stderr, "%s: ", prompt);
+  fflush (stderr);
+
+  if (fgets (buf, sizeof (buf), stdin) == NULL)
+    return NULL;
+
+  /* Trim trailing whitespace */
+  p = buf + strlen (buf);
+  while (p > buf && (p[-1] == '\n' || p[-1] == '\r' || p[-1] == ' ' || p[-1] == '\t'))
+    p--;
+  *p = '\0';
+
+  /* If empty and there's a default, use the default */
+  if (buf[0] == '\0' && default_val && *default_val)
+    result = savestring (default_val);
+  else
+    result = savestring (buf);
+
+  return result;
+}
+
+/* Interactive setup wizard for first-time configuration.
+   Returns 1 if setup completed successfully, 0 if user declined or setup failed. */
+static int
+baish_interactive_setup (void)
+{
+  char *response;
+  char *base_url_input;
+  char *api_key_input;
+  char *model_input;
+  char *persist_choice;
+  const char *scheme;
+  char *host;
+  char *port;
+  char *base_path;
+  char *models_path;
+  char **models;
+  int nmodels;
+  int explicit_port;
+  int probe_status;
+  char *probe_error;
+  int probe_result;
+  int i;
+  FILE *bashrc;
+  const char *home;
+  char *bashrc_path;
+
+  if (interactive_shell == 0 || isatty (fileno (stdin)) == 0)
+    return 0;
+
+  fprintf (stderr, "\n");
+  fprintf (stderr, "Would you like to set this up now? [y/N]: ");
+  fflush (stderr);
+
+  response = NULL;
+  {
+    char buf[32];
+    if (fgets (buf, sizeof (buf), stdin) == NULL)
+      return 0;
+    response = savestring (buf);
+  }
+
+  if (response == NULL || (response[0] != 'y' && response[0] != 'Y'))
+    {
+      if (response)
+        free (response);
+      fprintf (stderr, "Setup cancelled.\n");
+      return 0;
+    }
+  free (response);
+
+  fprintf (stderr, "\n=== baish Interactive Setup ===\n\n");
+
+  /* Get base URL with ollama default */
+  base_url_input = baish_read_line_with_default ("Enter LLM server URL", "localhost:11434");
+  if (base_url_input == NULL || *base_url_input == '\0')
+    {
+      if (base_url_input)
+        free (base_url_input);
+      fprintf (stderr, "Setup cancelled.\n");
+      return 0;
+    }
+
+  /* Get API key (optional) */
+  api_key_input = baish_read_line_with_default ("Enter API key (press Enter for none)", "");
+
+  /* Parse the base URL */
+  scheme = NULL;
+  host = NULL;
+  port = NULL;
+  base_path = NULL;
+  explicit_port = 0;
+
+  if (baish_parse_http_base_url (base_url_input, &scheme, &host, &port, &base_path, &explicit_port) == 0)
+    {
+      fprintf (stderr, "Error: Invalid URL format. Please use HOST[:PORT] or http(s)://HOST[:PORT][/v1]\n");
+      free (base_url_input);
+      if (api_key_input)
+        free (api_key_input);
+      return 0;
+    }
+
+  /* Probe the server for available models */
+  fprintf (stderr, "\nProbing %s for available models...\n", base_url_input);
+
+  models_path = baish_join_api_path (base_path, "/models");
+  models = NULL;
+  nmodels = 0;
+  probe_error = NULL;
+
+  openai_init (api_key_input && *api_key_input ? api_key_input : NULL);
+  openai_set_timeout (baish_http_timeout_seconds ());
+  {
+    char *api_url;
+    api_url = baish_build_api_url (scheme, host, port, base_path);
+    if (api_url)
+      {
+        openai_set_base_url (api_url);
+        free (api_url);
+      }
+  }
+
+  probe_result = baish_fetch_models (scheme, host, port, models_path, &models, &nmodels, &probe_status, &probe_error);
+
+  if (probe_result == 1 && nmodels > 0)
+    {
+      fprintf (stderr, "Found %d model(s):\n", nmodels);
+      for (i = 0; i < nmodels && i < 20; i++)
+        fprintf (stderr, "  %s\n", models[i]);
+      if (nmodels > 20)
+        fprintf (stderr, "  ... (%d more)\n", nmodels - 20);
+
+      /* Offer first model as default */
+      model_input = baish_read_line_with_default ("\nEnter model name", models[0]);
+    }
+  else
+    {
+      if (probe_result == -1)
+        {
+          fprintf (stderr, "Warning: Could not connect to server");
+          if (baish_transport_error[0])
+            fprintf (stderr, ": %s", baish_transport_error);
+          fprintf (stderr, "\n");
+        }
+      else if (probe_status != 200)
+        {
+          fprintf (stderr, "Warning: Server returned HTTP %d", probe_status);
+          if (probe_error)
+            fprintf (stderr, ": %s", probe_error);
+          fprintf (stderr, "\n");
+        }
+      else
+        {
+          fprintf (stderr, "Warning: Could not parse models from server.\n");
+        }
+
+      fprintf (stderr, "You can still enter a model name manually.\n");
+      model_input = baish_read_line_with_default ("Enter model name", "");
+    }
+
+  if (probe_error)
+    free (probe_error);
+  if (models_path)
+    free (models_path);
+  baish_free_string_list (models, nmodels);
+
+  if (model_input == NULL || *model_input == '\0')
+    {
+      fprintf (stderr, "Error: Model name is required.\n");
+      free (base_url_input);
+      if (api_key_input)
+        free (api_key_input);
+      if (model_input)
+        free (model_input);
+      free (host);
+      if (port)
+        free (port);
+      free (base_path);
+      return 0;
+    }
+
+  /* Ask about persisting to ~/.bashrc */
+  persist_choice = baish_read_line_with_default ("\nSave configuration to ~/.bashrc?", "y");
+
+  if (persist_choice && (persist_choice[0] == 'y' || persist_choice[0] == 'Y'))
+    {
+      home = getenv ("HOME");
+      if (home == NULL || *home == '\0')
+        {
+          fprintf (stderr, "Warning: HOME environment variable not set, cannot save to ~/.bashrc\n");
+        }
+      else
+        {
+          bashrc_path = (char *)xmalloc (strlen (home) + 16);
+          sprintf (bashrc_path, "%s/.bashrc", home);
+
+          bashrc = fopen (bashrc_path, "a");
+          if (bashrc == NULL)
+            {
+              fprintf (stderr, "Warning: Could not open %s for writing: %s\n", bashrc_path, strerror (errno));
+            }
+          else
+            {
+              fprintf (bashrc, "\n# baish LLM configuration (added by interactive setup)\n");
+              fprintf (bashrc, "export BAISH_OPENAI_BASE_URL=\"%s\"\n", base_url_input);
+              fprintf (bashrc, "export BAISH_MODEL=\"%s\"\n", model_input);
+              if (api_key_input && *api_key_input)
+                fprintf (bashrc, "export OPENAI_API_KEY=\"%s\"\n", api_key_input);
+              fclose (bashrc);
+              fprintf (stderr, "Configuration saved to %s\n", bashrc_path);
+            }
+          free (bashrc_path);
+        }
+    }
+
+  if (persist_choice)
+    free (persist_choice);
+
+  /* Set variables in current session */
+  bind_variable ("BAISH_OPENAI_BASE_URL", base_url_input, 0);
+  bind_variable ("BAISH_MODEL", model_input, 0);
+  if (api_key_input && *api_key_input)
+    bind_variable ("OPENAI_API_KEY", api_key_input, 0);
+
+  fprintf (stderr, "\n=== Setup Complete ===\n");
+  fprintf (stderr, "Variables set in current session:\n");
+  fprintf (stderr, "  BAISH_OPENAI_BASE_URL=%s\n", base_url_input);
+  fprintf (stderr, "  BAISH_MODEL=%s\n", model_input);
+  if (api_key_input && *api_key_input)
+    fprintf (stderr, "  OPENAI_API_KEY=%s\n", api_key_input);
+
+  fprintf (stderr, "\nYou can now use 'ask' to query the LLM:\n");
+  fprintf (stderr, "  ask \"what is 2+2?\"\n");
+  fprintf (stderr, "  ask -c \"show me the 10 largest files\"  # -c to execute commands\n");
+
+  /* Clean up */
+  free (base_url_input);
+  if (api_key_input)
+    free (api_key_input);
+  free (model_input);
+  free (host);
+  if (port)
+    free (port);
+  free (base_path);
+
+  return 1;
+}
+
 static char *
 baish_extract_message_content (const char *json)
 {
@@ -2228,7 +2491,38 @@ ask_builtin (WORD_LIST *list)
       bind_variable ("BAISH_LAST_COMMANDS", "", 0);
       builtin_error (_("LLM server not configured (missing BAISH_OPENAI_BASE_URL / OPENAI_BASE_URL)"));
       baish_print_llm_env_help ();
-      return (EXECUTION_FAILURE);
+
+      /* Offer interactive setup if in interactive mode */
+      if (baish_interactive_setup ())
+        {
+          /* Retry configuration after setup */
+          base_url = get_string_value ("BAISH_OPENAI_BASE_URL");
+          base_url_var = "BAISH_OPENAI_BASE_URL";
+          if (base_url == 0)
+            {
+              base_url = get_string_value ("OPENAI_BASE_URL");
+              base_url_var = "OPENAI_BASE_URL";
+            }
+          model = get_string_value ("BAISH_MODEL");
+          model_var = "BAISH_MODEL";
+          if (model == 0)
+            {
+              model = get_string_value ("OPENAI_MODEL");
+              model_var = "OPENAI_MODEL";
+            }
+          api_key = get_string_value ("OPENAI_API_KEY");
+
+          /* If still not configured after setup, fail */
+          if (base_url == 0)
+            {
+              builtin_error (_("Setup did not configure BAISH_OPENAI_BASE_URL"));
+              return (EXECUTION_FAILURE);
+            }
+        }
+      else
+        {
+          return (EXECUTION_FAILURE);
+        }
     }
 
   question = baish_read_question_from_args (list);

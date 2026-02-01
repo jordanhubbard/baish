@@ -14,6 +14,23 @@ It adds an `ask` builtin (and `?{...}` sugar) that calls an OpenAI-compatible AP
 - 
 ## Build / run / test
 
+### Prerequisites
+
+First, install build dependencies (requires sudo):
+
+```bash
+make depends
+```
+
+This will install `libcurl4-openssl-dev` which is required for the `ask` and `mcp` builtins. The `make depends` target automatically detects your package manager (apt/brew/pkg) and installs the necessary dependencies.
+
+For manual installation:
+- **Debian/Ubuntu/WSL**: `sudo apt-get install libcurl4-openssl-dev`
+- **macOS**: `brew install curl`
+- **FreeBSD**: `sudo pkg install curl`
+
+### Build
+
 Preferred (top-level Makefile):
 
 ```bash
@@ -94,6 +111,54 @@ If no port is provided, `baish` will try common HTTP ports (currently `80`, then
 
 3. **No Command Timeout**: Executed commands have no built-in timeout. LLM-generated infinite loops or long-running commands will block the shell until interrupted (Ctrl+C).
 
+## Interactive Setup
+
+When you first run `ask` without configuration in an interactive shell, `baish` will offer to guide you through setup:
+
+```bash
+$ baish
+$ ask "test"
+baish: ask: LLM server not configured (missing BAISH_OPENAI_BASE_URL / OPENAI_BASE_URL)
+baish: configure the LLM with environment variables:
+  export BAISH_OPENAI_BASE_URL=HOST[:PORT][/v1][,HOST...]   # comma/whitespace-separated
+  export BAISH_MODEL=MODEL_ID[,MODEL_ID...]                  # comma/whitespace-separated
+  export OPENAI_API_KEY=...                     # optional
+  export BAISH_FAIL_FAST=1                      # optional preflight
+  export BAISH_HTTP_TIMEOUT_SECS=15             # optional transport timeout
+
+Would you like to set this up now? [y/N]: y
+
+=== baish Interactive Setup ===
+
+Enter LLM server URL [localhost:11434]:
+Enter API key (press Enter for none):
+
+Probing localhost:11434 for available models...
+Found 2 model(s):
+  qwen2.5-coder:7b
+  llama3.2:3b
+
+Enter model name [qwen2.5-coder:7b]:
+
+Save configuration to ~/.bashrc? [y]: y
+Configuration saved to /home/user/.bashrc
+
+=== Setup Complete ===
+Variables set in current session:
+  BAISH_OPENAI_BASE_URL=localhost:11434
+  BAISH_MODEL=qwen2.5-coder:7b
+
+You can now use 'ask' to query the LLM:
+  ask "what is 2+2?"
+  ask -c "show me the 10 largest files"  # -c to execute commands
+```
+
+The interactive setup:
+- Offers sensible defaults (Ollama on localhost:11434)
+- Probes the server to detect available models
+- Optionally persists configuration to `~/.bashrc`
+- Sets variables in the current session immediately
+
 ## Using the LLM
 
 ### `ask` builtin
@@ -130,7 +195,7 @@ mcp list                       # List available commands from the MCP
 mcp disconnect                 # Disconnect from the MCP server
 ```
 
-**Requirements:** `libcurl4-openssl-dev` (or equivalent) must be installed at build time.
+**Requirements:** `libcurl4-openssl-dev` (or equivalent) must be installed at build time. Run `make depends` to install automatically, or see the Prerequisites section above.
 
 The MCP implementation provides:
 - HTTP/HTTPS communication with MCP servers

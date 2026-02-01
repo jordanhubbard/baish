@@ -10,7 +10,7 @@ DESTDIR ?=
 
 CONFIGURE_ARGS ?=
 
-.PHONY: all configure build run test install uninstall clean distclean help release release-minor release-major
+.PHONY: all configure build run test install uninstall clean distclean help depends release release-minor release-major
 
 all: build
 
@@ -43,9 +43,34 @@ distclean:
 	-$(MAKE) -C "$(BAISH_SRC_DIR)" distclean
 	-rm -rf .tmp-*
 
+depends:
+	@echo "Installing build dependencies..."
+	@if command -v apt-get >/dev/null 2>&1; then \
+		echo "Detected apt-get (Debian/Ubuntu/WSL)"; \
+		sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev; \
+	elif command -v apt >/dev/null 2>&1; then \
+		echo "Detected apt (Debian/Ubuntu/WSL)"; \
+		sudo apt update && sudo apt install -y libcurl4-openssl-dev; \
+	elif command -v brew >/dev/null 2>&1; then \
+		echo "Detected brew (macOS)"; \
+		brew install curl; \
+	elif command -v pkg >/dev/null 2>&1; then \
+		echo "Detected pkg (FreeBSD)"; \
+		sudo pkg install -y curl; \
+	else \
+		echo "Error: Could not detect package manager"; \
+		echo "Please install libcurl development headers manually:"; \
+		echo "  - Debian/Ubuntu/WSL: sudo apt-get install libcurl4-openssl-dev"; \
+		echo "  - macOS: brew install curl"; \
+		echo "  - FreeBSD: sudo pkg install curl"; \
+		exit 1; \
+	fi
+	@echo "Dependencies installed successfully!"
+
 help:
 	@printf "%s\n" \
 		"Targets:" \
+		"  depends       Install build dependencies (requires sudo)" \
 		"  build         Configure (if needed) and build baish" \
 		"  run           Run baish (pass args via RUN_ARGS=...)" \
 		"  test          Run baish tests (bash test suite)" \
