@@ -38,14 +38,14 @@ loadablesdir = ${libdir}/bash
 headersdir = $(includedir)/$(PACKAGE_NAME)
 
 topdir = ../..
-BUILD_DIR = /Users/shedwards/src/baish/src
+BUILD_DIR = /Users/jkh/Src/AI/baish/src
 srcdir = .
 
 
 # Support an alternate destination root directory for package building
 DESTDIR =
 
-INSTALL = /usr/bin/install -c
+INSTALL = /opt/local/bin/ginstall -c
 INSTALL_PROGRAM = ${INSTALL}
 INSTALL_SCRIPT = ${INSTALL}
 INSTALL_DATA = ${INSTALL} -m 644
