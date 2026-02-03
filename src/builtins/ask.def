@@ -2460,6 +2460,14 @@ ask_builtin (WORD_LIST *list)
     }
   list = loptend;
 
+  /* Check if a question was provided before proceeding with setup */
+  if (list == NULL && isatty (STDIN_FILENO))
+    {
+      builtin_usage ();
+      builtin_error (_("missing question"));
+      return (EX_USAGE);
+    }
+
   if (json_only)
     run_commands = 0;
 
