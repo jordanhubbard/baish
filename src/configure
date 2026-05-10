@@ -650,6 +650,8 @@ gl_use_winpthreads_default=
 enable_year2038=no
 ac_subst_vars='LTLIBOBJS
 STDCKDINT_H
+CURL_LIBS
+CURL_CFLAGS
 LOCAL_DEFS
 LOCAL_LDFLAGS
 LOCAL_CFLAGS
@@ -917,6 +919,9 @@ CFLAGS
 LDFLAGS
 LIBS
 CPPFLAGS
+CURL_CONFIG
+CURL_CFLAGS
+CURL_LIBS
 YACC
 YFLAGS
 CPP'
@@ -1667,6 +1672,9 @@ Some influential environment variables:
   LIBS        libraries to pass to the linker, e.g. -l<library>
   CPPFLAGS    (Objective) C/C++ preprocessor flags, e.g. -I<include dir> if
               you have headers in a nonstandard directory <include dir>
+  CURL_CONFIG path to curl-config utility
+  CURL_CFLAGS C compiler flags for libcurl
+  CURL_LIBS   linker flags for libcurl
   YACC        The 'Yet Another Compiler Compiler' implementation to use.
               Defaults to the first program found out of: 'bison -y', 'byacc',
               'yacc'.
@@ -17920,6 +17928,86 @@ fi
 
 fi
 
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for curl-config" >&5
+printf %s "checking for curl-config... " >&6; }
+if test -n "$CURL_CONFIG"; then
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $CURL_CONFIG" >&5
+printf "%s\n" "$CURL_CONFIG" >&6; }
+else
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+  for as_dir in $PATH
+  do
+    IFS=$as_save_IFS
+    case $as_dir in #(((
+      '') as_dir=./ ;;
+      */) ;;
+      *) as_dir=$as_dir/ ;;
+    esac
+    for ac_exec_ext in '' $ac_executable_extensions; do
+      if as_fn_executable_p "$as_dir"curl-config$ac_exec_ext; then
+        CURL_CONFIG="$as_dir"curl-config$ac_exec_ext
+        printf "%s\n" "$as_me:${as_lineno-$LINENO}: found $CURL_CONFIG" >&5
+        break 2
+      fi
+    done
+  done
+  IFS=$as_save_IFS
+
+  if test -n "$CURL_CONFIG"; then
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $CURL_CONFIG" >&5
+printf "%s\n" "$CURL_CONFIG" >&6; }
+  else
+    CURL_CONFIG=no
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; }
+  fi
+fi
+
+if test "x$CURL_CFLAGS" = x && test "$CURL_CONFIG" != no; then
+	CURL_CFLAGS=`"$CURL_CONFIG" --cflags`
+fi
+if test "x$CURL_LIBS" = x; then
+	if test "$CURL_CONFIG" != no; then
+		CURL_LIBS=`"$CURL_CONFIG" --libs`
+	else
+		CURL_LIBS=-lcurl
+	fi
+fi
+
+bash_save_CPPFLAGS=$CPPFLAGS
+bash_save_LIBS=$LIBS
+CPPFLAGS="$CPPFLAGS $CURL_CFLAGS"
+LIBS="$LIBS $CURL_LIBS"
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether libcurl is usable" >&5
+printf %s "checking whether libcurl is usable... " >&6; }
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <curl/curl.h>
+int
+main (void)
+{
+curl_global_init(CURL_GLOBAL_DEFAULT); curl_global_cleanup();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  baish_cv_libcurl_usable=yes
+else case e in #(
+  e) baish_cv_libcurl_usable=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $baish_cv_libcurl_usable" >&5
+printf "%s\n" "$baish_cv_libcurl_usable" >&6; }
+CPPFLAGS=$bash_save_CPPFLAGS
+LIBS=$bash_save_LIBS
+if test "$baish_cv_libcurl_usable" != yes; then
+	as_fn_error $? "libcurl not found or unusable. Install libcurl development headers/libraries or set CURL_CFLAGS/CURL_LIBS." "$LINENO" 5
+fi
+
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking type of array argument to getgroups" >&5
 printf %s "checking type of array argument to getgroups... " >&6; }
 if test ${ac_cv_type_getgroups+y}
@@ -24749,5 +24837,3 @@ if test -n "$ac_unrecognized_opts" && test "$enable_option_checking" != no; then
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: unrecognized options: $ac_unrecognized_opts" >&5
 printf "%s\n" "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
-
-

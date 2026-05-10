@@ -1,0 +1,2 @@
+{"id":"int-9bae4268","kind":"field_change","created_at":"2026-05-10T20:48:20.760007427Z","actor":"jkh","issue_id":"baish-4rl","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-029f9645","kind":"field_change","created_at":"2026-05-10T21:00:36.940094639Z","actor":"jkh","issue_id":"baish-4rl","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Fixed build/install dependency management and verified build, temporary install, and test target."}}

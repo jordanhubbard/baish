@@ -145,7 +145,9 @@ LOCAL_DEFS = @LOCAL_DEFS@
 LOCALE_DEFS = -DLOCALEDIR='"$(localedir)"' -DPACKAGE='"$(PACKAGE)"'
 
 LOCAL_LIBS = @LOCAL_LIBS@
-LIBS = $(BUILTINS_LIB) $(LIBRARIES) @LIBS@ -lcurl
+CURL_CFLAGS = @CURL_CFLAGS@
+CURL_LIBS = @CURL_LIBS@
+LIBS = $(BUILTINS_LIB) $(LIBRARIES) @LIBS@ $(CURL_LIBS)
 LIBS_FOR_BUILD = 
 
 STATIC_LD = @STATIC_LD@
@@ -160,7 +162,7 @@ ADDON_CFLAGS =
 ADDON_LDFLAGS =
 
 BASE_CCFLAGS = $(SYSTEM_FLAGS) $(LOCAL_DEFS) \
-	  $(DEFS) $(LOCAL_CFLAGS) $(INCLUDES) $(STYLE_CFLAGS)
+	  $(DEFS) $(LOCAL_CFLAGS) $(INCLUDES) $(CURL_CFLAGS) $(STYLE_CFLAGS)
 
 CCFLAGS = $(ADDON_CFLAGS) $(BASE_CCFLAGS) ${PROFILE_FLAGS} $(CPPFLAGS) $(CFLAGS)
 
@@ -636,7 +638,7 @@ $(Program): $(OBJECTS) $(BUILTINS_DEP) $(LIBDEP) .build
 	ls -l $(Program)
 	-$(SIZE) $(Program)
 
-.build:	$(SOURCES) config.h Makefile $(DEFDIR)/builtext.h version.h $(VERSPROG)
+.build:	$(SOURCES) config.h Makefile $(DEFDIR)/builtext.h pathnames.h version.h $(VERSPROG)
 	@echo
 	@echo "	  ***********************************************************"
 	@echo "	  *                                                         *"
@@ -847,13 +849,14 @@ config.status:	$(srcdir)/configure
 	$(SHELL) ./config.status --recheck
 
 pathnames.h:		Makefile $(srcdir)/pathnames.h.in
-	@sed -e 's|@DEBUGGER_START_FILE\@|${DEBUGGER_START_FILE}|g' $(srcdir)/pathnames.h.in > pathnames.tmp
-	@if test -f $@; then \
-		cmp -s pathnames.tmp $@ || mv pathnames.tmp $@; \
+	@tmp=pathnames.tmp.$$$$; \
+	sed -e 's|@DEBUGGER_START_FILE\@|${DEBUGGER_START_FILE}|g' $(srcdir)/pathnames.h.in > "$$tmp"; \
+	if test -f $@; then \
+		cmp -s "$$tmp" $@ || mv "$$tmp" $@; \
 	else \
-		mv pathnames.tmp $@; \
-	fi
-	@${RM} pathnames.tmp
+		mv "$$tmp" $@; \
+	fi; \
+	${RM} "$$tmp"
 
 buildconf.h:	$(srcdir)/buildconf.h.in
 	CONFIG_FILES= CONFIG_HEADERS=buildconf.h $(SHELL) ./config.status

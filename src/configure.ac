@@ -1003,6 +1003,41 @@ if test "$ac_cv_func_gethostbyname" = no; then
 	BASH_FUNC_GETHOSTBYNAME
 fi
 
+dnl baish-specific dependency checks
+AC_ARG_VAR([CURL_CONFIG], [path to curl-config utility])
+AC_ARG_VAR([CURL_CFLAGS], [C compiler flags for libcurl])
+AC_ARG_VAR([CURL_LIBS], [linker flags for libcurl])
+AC_CHECK_PROG([CURL_CONFIG], [curl-config], [curl-config], [no])
+
+if test "x$CURL_CFLAGS" = x && test "$CURL_CONFIG" != no; then
+	CURL_CFLAGS=`"$CURL_CONFIG" --cflags`
+fi
+if test "x$CURL_LIBS" = x; then
+	if test "$CURL_CONFIG" != no; then
+		CURL_LIBS=`"$CURL_CONFIG" --libs`
+	else
+		CURL_LIBS=-lcurl
+	fi
+fi
+
+bash_save_CPPFLAGS=$CPPFLAGS
+bash_save_LIBS=$LIBS
+CPPFLAGS="$CPPFLAGS $CURL_CFLAGS"
+LIBS="$LIBS $CURL_LIBS"
+AC_CHECK_HEADER([curl/curl.h], [],
+	[AC_MSG_ERROR([libcurl headers not found. Install libcurl development headers or set CURL_CFLAGS/CURL_LIBS.])])
+AC_MSG_CHECKING([whether libcurl is usable])
+AC_LINK_IFELSE(
+	[AC_LANG_PROGRAM([[#include <curl/curl.h>]],
+		[[curl_global_init(CURL_GLOBAL_DEFAULT); curl_global_cleanup();]])],
+	[AC_MSG_RESULT([yes])],
+	[AC_MSG_RESULT([no])
+	 AC_MSG_ERROR([libcurl not found or unusable. Install libcurl development libraries or set CURL_CFLAGS/CURL_LIBS.])])
+CPPFLAGS=$bash_save_CPPFLAGS
+LIBS=$bash_save_LIBS
+AC_SUBST([CURL_CFLAGS])
+AC_SUBST([CURL_LIBS])
+
 dnl system types
 AC_TYPE_GETGROUPS
 AC_TYPE_OFF_T

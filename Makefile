@@ -3,23 +3,59 @@ SHELL := /bin/sh
 BAISH_SRC_DIR ?= src
 BAISH_BIN := $(BAISH_SRC_DIR)/baish
 
+CC ?= $(shell command -v cc 2>/dev/null || command -v gcc 2>/dev/null || echo cc)
 JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
 PREFIX ?= $(HOME)/.local
 DESTDIR ?=
 
 CONFIGURE_ARGS ?=
+CURL_CONFIG ?= curl-config
+CURL_CFLAGS ?= $(shell $(CURL_CONFIG) --cflags 2>/dev/null)
+CURL_LIBS ?= $(shell $(CURL_CONFIG) --libs 2>/dev/null || printf "%s" "-lcurl")
 
-.PHONY: all configure build run test install uninstall clean distclean help depends release release-minor release-major
+CONFIGURE_DEPS := \
+	$(BAISH_SRC_DIR)/configure \
+	$(BAISH_SRC_DIR)/Makefile.in \
+	$(BAISH_SRC_DIR)/builtins/Makefile.in \
+	$(BAISH_SRC_DIR)/doc/Makefile.in \
+	$(BAISH_SRC_DIR)/examples/loadables/Makefile.in \
+	$(BAISH_SRC_DIR)/examples/loadables/Makefile.inc.in \
+	$(BAISH_SRC_DIR)/examples/loadables/Makefile.sample.in \
+	$(BAISH_SRC_DIR)/examples/loadables/perl/Makefile.in \
+	$(BAISH_SRC_DIR)/lib/glob/Makefile.in \
+	$(BAISH_SRC_DIR)/lib/intl/Makefile.in \
+	$(BAISH_SRC_DIR)/lib/malloc/Makefile.in \
+	$(BAISH_SRC_DIR)/lib/readline/Makefile.in \
+	$(BAISH_SRC_DIR)/lib/sh/Makefile.in \
+	$(BAISH_SRC_DIR)/lib/termcap/Makefile.in \
+	$(BAISH_SRC_DIR)/lib/tilde/Makefile.in \
+	$(BAISH_SRC_DIR)/po/Makefile.in.in \
+	$(BAISH_SRC_DIR)/support/Makefile.in
+
+.PHONY: all check-deps configure build run test install uninstall clean distclean help depends release release-minor release-major
 
 all: build
 
-$(BAISH_SRC_DIR)/Makefile: $(BAISH_SRC_DIR)/configure
+$(BAISH_SRC_DIR)/Makefile: $(CONFIGURE_DEPS)
 	cd "$(BAISH_SRC_DIR)" && ./configure $(CONFIGURE_ARGS)
+
+check-deps:
+	@tmp_c=$$(mktemp "$${TMPDIR:-/tmp}/baish-curl-check.XXXXXX.c") || exit 1; \
+	tmp_bin=$$(mktemp "$${TMPDIR:-/tmp}/baish-curl-check.XXXXXX") || { rm -f "$$tmp_c"; exit 1; }; \
+	trap 'rm -f "$$tmp_c" "$$tmp_bin"' EXIT HUP INT TERM; \
+	printf "%s\n" "#include <curl/curl.h>" \
+		"int main(void) { curl_global_init(CURL_GLOBAL_DEFAULT); curl_global_cleanup(); return 0; }" > "$$tmp_c"; \
+	if ! $(CC) $(CURL_CFLAGS) -o "$$tmp_bin" "$$tmp_c" $(CURL_LIBS) >/dev/null 2>&1; then \
+		echo "Error: libcurl development headers/libraries are required to build baish."; \
+		echo "Run 'make depends' or install libcurl development files manually."; \
+		echo "For non-standard locations, pass CURL_CFLAGS=... and CURL_LIBS=..."; \
+		exit 1; \
+	fi
 
 configure: $(BAISH_SRC_DIR)/Makefile
 
-build: configure
+build: check-deps configure
 	$(MAKE) -C "$(BAISH_SRC_DIR)" -j$(JOBS)
 
 run: build
@@ -86,6 +122,7 @@ depends:
 help:
 	@printf "%s\n" \
 		"Targets:" \
+		"  check-deps    Verify build dependencies are available" \
 		"  depends       Install build dependencies (requires sudo)" \
 		"  build         Configure (if needed) and build baish" \
 		"  run           Run baish (pass args via RUN_ARGS=...)" \
