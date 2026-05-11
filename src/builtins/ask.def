@@ -222,6 +222,31 @@ baish_strcasestr (const char *haystack, const char *needle)
   return 0;
 }
 
+static int
+baish_streq_casefold (const char *a, const char *b)
+{
+  if (a == 0 || b == 0)
+    return 0;
+
+  while (*a && *b)
+    {
+      if (baish_ascii_tolower ((unsigned char)*a) != baish_ascii_tolower ((unsigned char)*b))
+        return 0;
+      a++;
+      b++;
+    }
+
+  return (*a == 0 && *b == 0);
+}
+
+static const char *
+baish_loopback_ipv4_fallback_host (const char *host)
+{
+  if (baish_streq_casefold (host, "localhost") || baish_streq_casefold (host, "localhost."))
+    return "127.0.0.1";
+  return 0;
+}
+
 static char baish_transport_error[BAISH_TRANSPORT_ERROR_SIZE];
 
 static void
@@ -1111,6 +1136,36 @@ baish_openai_request (const char *method, const char *scheme, const char *host, 
 }
 
 static char *
+baish_openai_request_with_loopback_fallback (const char *method, const char *scheme,
+                                             const char *host, const char *port,
+                                             const char *path, const char *body,
+                                             long *statusp)
+{
+  char *resp;
+  long status;
+  const char *fallback_host;
+
+  status = 0;
+  resp = baish_openai_request (method, scheme, host, port, path, body, &status);
+  if (statusp)
+    *statusp = status;
+  if (resp)
+    return resp;
+
+  fallback_host = baish_loopback_ipv4_fallback_host (host);
+  if (fallback_host == 0)
+    return 0;
+
+  status = 0;
+  resp = baish_openai_request (method, scheme, fallback_host, port, path, body, &status);
+  if (statusp)
+    *statusp = status;
+  if (resp)
+    baish_clear_transport_error ();
+  return resp;
+}
+
+static char *
 baish_openai_request_try_ports (const char *method, const char *scheme, const char *host, const char *port,
                                 const char *path, const char *body, long *statusp)
 {
@@ -1121,13 +1176,13 @@ baish_openai_request_try_ports (const char *method, const char *scheme, const ch
 
   if (port && *port)
     {
-      resp = baish_openai_request (method, scheme, host, port, path, body, &status);
+      resp = baish_openai_request_with_loopback_fallback (method, scheme, host, port, path, body, &status);
       if (statusp)
         *statusp = status;
       return resp;
     }
 
-  resp = baish_openai_request (method, scheme, host, 0, path, body, &status);
+  resp = baish_openai_request_with_loopback_fallback (method, scheme, host, 0, path, body, &status);
   if (resp)
     {
       if (statusp)
@@ -1137,7 +1192,7 @@ baish_openai_request_try_ports (const char *method, const char *scheme, const ch
 
   if (scheme && STREQ (scheme, "http"))
     {
-      resp = baish_openai_request (method, scheme, host, "8000", path, body, &status);
+      resp = baish_openai_request_with_loopback_fallback (method, scheme, host, "8000", path, body, &status);
       if (resp)
         {
           baish_clear_transport_error ();
@@ -2085,6 +2140,18 @@ baish_try_parse_answer_commands (const char *s, char **answerp, char ***cmdsp, i
   answer_item = cJSON_GetObjectItemCaseSensitive (root, "answer");
   if (cJSON_IsString (answer_item))
     answer = savestring (answer_item->valuestring);
+  if (answer == 0)
+    {
+      answer_item = cJSON_GetObjectItemCaseSensitive (root, "response");
+      if (cJSON_IsString (answer_item))
+        answer = savestring (answer_item->valuestring);
+    }
+  if (answer == 0)
+    {
+      answer_item = cJSON_GetObjectItemCaseSensitive (root, "text");
+      if (cJSON_IsString (answer_item))
+        answer = savestring (answer_item->valuestring);
+    }
 
   commands_item = cJSON_GetObjectItemCaseSensitive (root, "commands");
   if (commands_item && cJSON_IsArray (commands_item) == 0)

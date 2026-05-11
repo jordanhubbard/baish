@@ -3,7 +3,7 @@
 Simple mock LLM server for testing baish ask builtin.
 
 Usage:
-    python3 mock-llm-server.py [port]
+    python3 mock-llm-server.py [port] [host]
 
 Returns mock responses in OpenAI-compatible format.
 """
@@ -78,12 +78,20 @@ class MockLLMHandler(BaseHTTPRequestHandler):
                 if 'list files' in prompt.lower():
                     answer = "To list files by size, use: ls -lhS"
                     commands = ["ls -lhS"]
+                    content = {'answer': answer, 'commands': commands}
+                elif 'alternate response key' in prompt.lower():
+                    content = {
+                        'response': 'Alternate response key worked',
+                        'commands': []
+                    }
                 elif 'disk usage' in prompt.lower():
                     answer = "Show disk usage with du command"
                     commands = ["du -sh *"]
+                    content = {'answer': answer, 'commands': commands}
                 else:
                     answer = f"Mock response to: {prompt[:50]}..."
                     commands = []
+                    content = {'answer': answer, 'commands': commands}
 
                 response = {
                     'id': 'mock-response',
@@ -92,10 +100,7 @@ class MockLLMHandler(BaseHTTPRequestHandler):
                     'choices': [{
                         'message': {
                             'role': 'assistant',
-                            'content': json.dumps({
-                                'answer': answer,
-                                'commands': commands
-                            })
+                            'content': json.dumps(content)
                         }
                     }]
                 }
@@ -107,10 +112,11 @@ class MockLLMHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-def run_server(port=8080):
-    server_address = ('', port)
+def run_server(port=8080, host=''):
+    server_address = (host, port)
     httpd = HTTPServer(server_address, MockLLMHandler)
-    print(f'Mock LLM server running on http://localhost:{port}')
+    display_host = host or 'localhost'
+    print(f'Mock LLM server running on http://{display_host}:{port}')
     print('Press Ctrl+C to stop')
     try:
         httpd.serve_forever()
@@ -120,4 +126,5 @@ def run_server(port=8080):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
-    run_server(port)
+    host = sys.argv[2] if len(sys.argv) > 2 else ''
+    run_server(port, host)
