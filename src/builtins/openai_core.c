@@ -37,6 +37,14 @@ static long openai_timeout_seconds = 0;
 static char* openai_last_error = NULL;
 static CURL* openai_curl_handle = NULL;
 
+static int
+openai_should_retry(CURLcode res)
+{
+    return (res == CURLE_RECV_ERROR ||
+            res == CURLE_SEND_ERROR ||
+            res == CURLE_GOT_NOTHING);
+}
+
 static void
 openai_clear_last_error(void)
 {
@@ -119,18 +127,18 @@ char* openai_request_with_status(const char* method, const char* url, const char
                                  long timeout_seconds, long* status)
 {
     CURL* curl = openai_curl_handle;
-    struct memory chunk = {malloc(1), 0};
+    struct memory chunk = {NULL, 0};
     struct curl_slist* headers = NULL;
     CURLcode res;
     long http_status = 0;
     long timeout = timeout_seconds > 0 ? timeout_seconds : openai_timeout_seconds;
     int cleanup_handle = 0;
+    int attempt;
 
     openai_clear_last_error();
 
     if (url == NULL) {
         openai_set_last_error("request url missing");
-        free(chunk.response);
         return NULL;
     }
 
@@ -144,40 +152,64 @@ char* openai_request_with_status(const char* method, const char* url, const char
         cleanup_handle = 1;
     }
 
-    curl_easy_reset(curl);
-
     headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "Accept: application/json");
+    headers = curl_slist_append(headers, "Expect:");
     if (api_key && *api_key) {
         char auth_header[512];
         snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", api_key);
         headers = curl_slist_append(headers, auth_header);
     }
 
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    for (attempt = 0; attempt < 2; attempt++) {
+        free(chunk.response);
+        chunk.response = malloc(1);
+        chunk.size = 0;
+        if (chunk.response == NULL) {
+            openai_set_last_error("out of memory");
+            break;
+        }
+        chunk.response[0] = '\0';
 
-    if (timeout > 0)
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+        curl_easy_reset(curl);
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        if (attempt > 0) {
+            curl_easy_setopt(curl, CURLOPT_FRESH_CONNECT, 1L);
+            curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
+        }
 
-    if (method && strcasecmp(method, "GET") == 0) {
-        curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-    } else {
-        curl_easy_setopt(curl, CURLOPT_POST, 1L);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body ? body : "");
-        if (method && strcasecmp(method, "POST") != 0)
-            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
-    }
+        if (timeout > 0)
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
 
-    res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
+        if (method && strcasecmp(method, "GET") == 0) {
+            curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+        } else {
+            const char *post_body = body ? body : "";
+            curl_easy_setopt(curl, CURLOPT_POST, 1L);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_body);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(post_body));
+            if (method && strcasecmp(method, "POST") != 0)
+                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
+        }
+
+        res = curl_easy_perform(curl);
+        if (res == CURLE_OK) {
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status);
+            break;
+        }
+
+        if (attempt == 0 && openai_should_retry(res))
+            continue;
+
         openai_set_last_error("curl error: %s", curl_easy_strerror(res));
         free(chunk.response);
         chunk.response = NULL;
-    } else {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status);
+        break;
     }
 
     if (status)

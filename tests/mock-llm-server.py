@@ -17,20 +17,49 @@ class MockLLMHandler(BaseHTTPRequestHandler):
         """Suppress default logging"""
         pass
 
+    def _send_json(self, status, payload):
+        data = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _extract_prompt(self, request_data):
+        messages = request_data.get('messages')
+        if isinstance(messages, list):
+            for message in reversed(messages):
+                if not isinstance(message, dict):
+                    continue
+                if message.get('role') != 'user':
+                    continue
+                content = message.get('content', '')
+                if isinstance(content, str):
+                    return content
+
+        inputs = request_data.get('input')
+        if isinstance(inputs, list):
+            for item in reversed(inputs):
+                if not isinstance(item, dict):
+                    continue
+                if item.get('role') != 'user':
+                    continue
+                content = item.get('content', '')
+                if isinstance(content, str):
+                    return content
+
+        return ''
+
     def do_GET(self):
         """Handle GET requests (for /models preflight check)"""
         if self.path == '/models' or self.path == '/v1/models':
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            response = {
+            self._send_json(200, {
                 'object': 'list',
                 'data': [
                     {'id': 'test-model', 'object': 'model'},
                     {'id': 'mock-model', 'object': 'model'}
                 ]
-            }
-            self.wfile.write(json.dumps(response).encode())
+            })
         else:
             self.send_response(404)
             self.end_headers()
@@ -43,7 +72,7 @@ class MockLLMHandler(BaseHTTPRequestHandler):
 
             try:
                 request_data = json.loads(body)
-                prompt = request_data.get('input', [{}])[1].get('content', '')
+                prompt = self._extract_prompt(request_data)
 
                 # Generate mock response based on prompt
                 if 'list files' in prompt.lower():
@@ -71,14 +100,9 @@ class MockLLMHandler(BaseHTTPRequestHandler):
                     }]
                 }
 
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps(response).encode())
+                self._send_json(200, response)
             except Exception as e:
-                self.send_response(500)
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': str(e)}).encode())
+                self._send_json(500, {'error': str(e)})
         else:
             self.send_response(404)
             self.end_headers()

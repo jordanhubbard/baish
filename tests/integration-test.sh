@@ -74,7 +74,7 @@ echo
 
 # Test 6: Ask with JSON output
 echo "Test 6: Ask with -j flag (JSON output)"
-"$BAISH_BIN" -c 'ask -j "test"' 2>&1 | grep -q '"answer"' && echo "✓ Test 6 passed" || echo "✗ Test 6 failed"
+"$BAISH_BIN" -c 'ask -j "test"' 2>&1 | grep -q '\\"answer\\"' && echo "✓ Test 6 passed" || echo "✗ Test 6 failed"
 echo
 
 echo "=== Integration Tests Complete ==="

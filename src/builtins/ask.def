@@ -1873,10 +1873,58 @@ baish_extract_response_output_text (const char *json)
 }
 
 static char *
+baish_extract_chat_choice_content (const char *json)
+{
+  cJSON *root;
+  cJSON *choices;
+  cJSON *first_choice;
+  cJSON *message;
+  cJSON *content;
+  cJSON *text;
+  char *out;
+
+  if (json == 0)
+    return 0;
+
+  root = cJSON_Parse (json);
+  if (root == 0)
+    return 0;
+
+  out = 0;
+  choices = cJSON_GetObjectItemCaseSensitive (root, "choices");
+  if (cJSON_IsArray (choices))
+    {
+      first_choice = cJSON_GetArrayItem (choices, 0);
+      if (cJSON_IsObject (first_choice))
+        {
+          message = cJSON_GetObjectItemCaseSensitive (first_choice, "message");
+          if (cJSON_IsObject (message))
+            {
+              content = cJSON_GetObjectItemCaseSensitive (message, "content");
+              if (cJSON_IsString (content))
+                out = savestring (content->valuestring);
+            }
+          if (out == 0)
+            {
+              text = cJSON_GetObjectItemCaseSensitive (first_choice, "text");
+              if (cJSON_IsString (text))
+                out = savestring (text->valuestring);
+            }
+        }
+    }
+
+  cJSON_Delete (root);
+  return out;
+}
+
+static char *
 baish_extract_response_text (const char *json)
 {
   char *out;
 
+  out = baish_extract_chat_choice_content (json);
+  if (out)
+    return out;
   out = baish_extract_response_output_text (json);
   if (out)
     return out;
@@ -2287,26 +2335,12 @@ baish_build_request_body (const char *question, const char *model,
   snprintf (body, body_size,
            "{"
            "\"model\":\"%s\","
-           "\"input\":["
+           "\"messages\":["
            "{\"role\":\"system\",\"content\":\"You are baish, a bash shell assistant. OS type: %s. CPU architecture: %s. Tailor commands as necessary for this OS type and CPU architecture. Only propose shell commands when strictly required to answer; otherwise return an empty commands array. Do not run uname or other OS-identification commands unless the user explicitly asks. Do not read or execute local files (including AGENTS.md) unless the user explicitly requests it. Do not put shell expansions like $(...) in the answer; put commands only in the commands array. Respond with JSON that matches the schema.\"},"
            "{\"role\":\"user\",\"content\":\"%s\"}"
            "],"
-           "\"text\":{"
-           "\"format\":{"
-           "\"type\":\"json_schema\","
-           "\"name\":\"baish_answer\","
-           "\"strict\":true,"
-           "\"schema\":{"
-           "\"type\":\"object\","
-           "\"properties\":{"
-           "\"answer\":{\"type\":\"string\"},"
-           "\"commands\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}"
-           "},"
-           "\"required\":[\"answer\",\"commands\"],"
-           "\"additionalProperties\":false"
-           "}"
-           "}"
-           "}"
+           "\"temperature\":0,"
+           "\"stream\":false"
            "}",
            escaped_model, escaped_os, escaped_arch, escaped);
 
@@ -2578,7 +2612,7 @@ ask_builtin (WORD_LIST *list)
       port = savestring (port_override);
     }
 
-  path = baish_join_api_path (base_path, "/responses");
+  path = baish_join_api_path (base_path, "/chat/completions");
   models_path = baish_join_api_path (base_path, "/models");
 
   openai_init (api_key);
