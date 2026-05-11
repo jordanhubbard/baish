@@ -38,14 +38,14 @@ loadablesdir = ${libdir}/bash
 headersdir = $(includedir)/$(PACKAGE_NAME)
 
 topdir = ../..
-BUILD_DIR = /Users/jkh/Src/AI/baish/src
+BUILD_DIR = /home/jkh/Src/baish/src
 srcdir = .
 
 
 # Support an alternate destination root directory for package building
 DESTDIR =
 
-INSTALL = /opt/local/bin/ginstall -c
+INSTALL = /bin/install -c
 INSTALL_PROGRAM = ${INSTALL}
 INSTALL_SCRIPT = ${INSTALL}
 INSTALL_DATA = ${INSTALL} -m 644
@@ -57,12 +57,12 @@ RM = rm -f
 
 SHELL = /bin/sh
 
-host_os = darwin25.2.0
-host_cpu = aarch64
-host_vendor = apple
+host_os = linux-gnu
+host_cpu = x86_64
+host_vendor = pc
 
 CFLAGS = -g -O2
-LOCAL_CFLAGS = -DMACOSX
+LOCAL_CFLAGS =
 DEFS = -DHAVE_CONFIG_H
 LOCAL_DEFS = -DSHELL
 
@@ -76,8 +76,8 @@ LIBBUILD = ${BUILD_DIR}/lib
 
 INTL_LIBSRC = ${topdir}/lib/intl
 INTL_BUILDDIR = ${LIBBUILD}/intl
-INTL_INC = -I${INTL_LIBSRC} -I${INTL_BUILDDIR}
-LIBINTL_H = ${INTL_BUILDDIR}/libintl.h
+INTL_INC =
+LIBINTL_H =
 
 CCFLAGS = $(DEFS) $(LOCAL_DEFS) $(LOCAL_CFLAGS) $(CFLAGS)
 
@@ -88,9 +88,9 @@ CCFLAGS = $(DEFS) $(LOCAL_DEFS) $(LOCAL_CFLAGS) $(CFLAGS)
 # changes to bash-maintainers@gnu.org.
 #
 SHOBJ_CC = gcc
-SHOBJ_CFLAGS = -fno-common
+SHOBJ_CFLAGS = -fPIC
 SHOBJ_LD = ${CC}
-SHOBJ_LDFLAGS = -dynamiclib -dynamic -undefined dynamic_lookup  
+SHOBJ_LDFLAGS = -shared -Wl,-soname,$@
 SHOBJ_XLDFLAGS = 
 SHOBJ_LIBS = 
 SHOBJ_STATUS = supported
